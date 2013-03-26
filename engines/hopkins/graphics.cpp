@@ -35,7 +35,9 @@
 
 namespace Hopkins {
 
-GraphicsManager::GraphicsManager() {
+GraphicsManager::GraphicsManager(HopkinsEngine *vm) {
+	_vm = vm;
+
 	_lockCounter = 0;
 	_initGraphicsFl = false;
 	_screenWidth = _screenHeight = 0;
@@ -47,11 +49,14 @@ GraphicsManager::GraphicsManager() {
 	_scrollPosX = 0;
 	_largeScreenFl = false;
 	_oldScrollPosX = 0;
-	NBBLOC = 0;
+	_vesaScreen = NULL;
+	_vesaBuffer = NULL;
+	_screenBuffer = NULL;
+	_showDirtyRects = false;
 
 	_lineNbr2 = 0;
-	Agr_x = Agr_y = 0;
-	Agr_Flag_x = Agr_Flag_y = false;
+	_enlargedX = _enlargedY = 0;
+	_enlargedXFl = _enlargedYFl = false;
 	_fadeDefaultSpeed = 15;
 	FADE_LINUX = 0;
 	_skipVideoLockFl = false;
@@ -63,8 +68,8 @@ GraphicsManager::GraphicsManager() {
 	_posXClipped = _posYClipped = 0;
 	clip_x1 = clip_y1 = 0;
 	_clipFl = false;
-	Red_x = Red_y = 0;
-	Red = 0;
+	_reduceX = _reducedY = 0;
+	_zoomOutFactor = 0;
 	_width = 0;
 	_specialWidth = 0;
 
@@ -72,23 +77,10 @@ GraphicsManager::GraphicsManager() {
 	Common::fill(&_colorTable[0], &_colorTable[PALETTE_EXT_BLOCK_SIZE], 0);
 	Common::fill(&_palette[0], &_palette[PALETTE_EXT_BLOCK_SIZE], 0);
 	Common::fill(&_oldPalette[0], &_oldPalette[PALETTE_EXT_BLOCK_SIZE], 0);
-
-	for (int i = 0; i < 250; ++i)
-		Common::fill((byte *)&BLOC[i], (byte *)&BLOC[i] + sizeof(BlocItem), 0);
-
-}
-
-GraphicsManager::~GraphicsManager() {
-	_vm->_globals.freeMemory(_vesaScreen);
-	_vm->_globals.freeMemory(_vesaBuffer);
-}
-
-void GraphicsManager::setParent(HopkinsEngine *vm) {
-	_vm = vm;
-
+	
 	if (_vm->getIsDemo()) {
 		if (_vm->getPlatform() == Common::kPlatformLinux)
-		// CHECKME: Should be false?
+			// CHECKME: Should be false?
 			MANU_SCROLL = true;
 		else
 			MANU_SCROLL = false;
@@ -99,22 +91,27 @@ void GraphicsManager::setParent(HopkinsEngine *vm) {
 	}
 }
 
+GraphicsManager::~GraphicsManager() {
+	_vm->_globals->freeMemory(_vesaScreen);
+	_vm->_globals->freeMemory(_vesaBuffer);
+	_vm->_globals->freeMemory(_screenBuffer);
+}
+
 void GraphicsManager::setGraphicalMode(int width, int height) {
 	if (!_initGraphicsFl) {
 		Graphics::PixelFormat pixelFormat16(2, 5, 6, 5, 0, 11, 5, 0, 0);
 		initGraphics(width, height, true, &pixelFormat16);
 
 		// Init surfaces
-		_vesaScreen = _vm->_globals.allocMemory(SCREEN_WIDTH * 2 * SCREEN_HEIGHT);
-		_vesaBuffer = _vm->_globals.allocMemory(SCREEN_WIDTH * 2 * SCREEN_HEIGHT);
+		_vesaScreen = _vm->_globals->allocMemory(SCREEN_WIDTH * 2 * SCREEN_HEIGHT);
+		_vesaBuffer = _vm->_globals->allocMemory(SCREEN_WIDTH * 2 * SCREEN_HEIGHT);
+		_screenBuffer = _vm->_globals->allocMemory(SCREEN_WIDTH * 2 * SCREEN_HEIGHT);
 
 		_videoPtr = NULL;
 		_screenWidth = width;
 		_screenHeight = height;
 
-		// Clear the screen pitch. This will be set on the first lockScreen call
-		WinScan = 0;
-
+		WinScan = SCREEN_WIDTH * 2;
 		PAL_PIXELS = SD_PIXELS;
 		_lineNbr = width;
 
@@ -128,14 +125,12 @@ void GraphicsManager::setGraphicalMode(int width, int height) {
  * (try to) Lock Screen
  */
 void GraphicsManager::lockScreen() {
-	if (_skipVideoLockFl)
-		return;
-
-	if (_lockCounter++ == 0) {
-		_videoPtr = g_system->lockScreen();
-		if (WinScan == 0)
-			WinScan = _videoPtr->pitch;
-	}
+	if (!_skipVideoLockFl) {
+		if (_lockCounter++ == 0) {
+			_videoPtr = _screenBuffer;
+			WinScan = SCREEN_WIDTH * 2;
+		}
+	}		
 }
 
 /**
@@ -144,7 +139,6 @@ void GraphicsManager::lockScreen() {
 void GraphicsManager::unlockScreen() {
 	assert(_videoPtr);
 	if (--_lockCounter == 0) {
-		g_system->unlockScreen();
 		_videoPtr = NULL;
 	}
 }
@@ -154,7 +148,15 @@ void GraphicsManager::unlockScreen() {
  */
 void GraphicsManager::clearScreen() {
 	assert(_videoPtr);
-	_videoPtr->fillRect(Common::Rect(0, 0, _screenWidth, _screenHeight), 0);
+
+	Common::fill(_screenBuffer, _screenBuffer + WinScan * _screenHeight, 0);
+	addRefreshRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+}
+
+void GraphicsManager::clearVesaScreen() {
+	Common::fill(_vesaScreen, _vesaScreen + WinScan * _screenHeight, 0);
+	Common::fill(_vesaBuffer, _vesaBuffer + WinScan * _screenHeight, 0);
+	addDirtyRect(Common::Rect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT));
 }
 
 /**
@@ -181,6 +183,7 @@ void GraphicsManager::loadVgaImage(const Common::String &file) {
 
 	lockScreen();
 	copy16bFromSurfaceScaleX2(_vesaBuffer);
+	addRefreshRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 	unlockScreen();
 
 	fadeInBreakout();
@@ -191,9 +194,10 @@ void GraphicsManager::loadVgaImage(const Common::String &file) {
  */
 void GraphicsManager::loadScreen(const Common::String &file) {
 	Common::File f;
+	assert(!_videoPtr);
 
 	bool flag = true;
-	if (_vm->_fileManager.searchCat(file, RES_PIC) == g_PTRNUL) {
+	if (_vm->_fileManager->searchCat(file, RES_PIC) == g_PTRNUL) {
 		if (!f.open(file))
 			error("loadScreen - %s", file.c_str());
 
@@ -230,7 +234,7 @@ void GraphicsManager::loadScreen(const Common::String &file) {
 		}
 	}
 
-	memcpy(_vesaBuffer, _vesaScreen, SCREEN_WIDTH * 2 * SCREEN_HEIGHT);
+	memcpy(_vesaBuffer, _vesaScreen, SCREEN_WIDTH * 2 * SCREEN_HEIGHT);	
 }
 
 void GraphicsManager::initColorTable(int minIndex, int maxIndex, byte *palette) {
@@ -241,9 +245,7 @@ void GraphicsManager::initColorTable(int minIndex, int maxIndex, byte *palette) 
 
 	for (int idx = 0; idx < 256; ++idx) {
 		byte v = _colorTable[idx];
-		if (v > 27)
-			_colorTable[idx] = 0;
-		if (!v)
+		if (v > 27 || !v)
 			_colorTable[idx] = 0;
 	}
 
@@ -255,7 +257,7 @@ void GraphicsManager::initColorTable(int minIndex, int maxIndex, byte *palette) 
  */
 void GraphicsManager::scrollScreen(int amount) {
 	int result = CLIP(amount, 0, SCREEN_WIDTH);
-	_vm->_eventsManager._startPos.x = result;
+	_vm->_eventsManager->_startPos.x = result;
 	_scrollOffset = result;
 	_scrollPosX = result;
 }
@@ -308,7 +310,7 @@ void GraphicsManager::loadPCX640(byte *surface, const Common::String &file, byte
 		// Load PCX from within the PIC resource
 		if (!f.open("PIC.RES"))
 			error("Error opening PIC.RES.");
-		f.seek(_vm->_globals._catalogPos);
+		f.seek(_vm->_globals->_catalogPos);
 	} else {
 		// Load stand alone PCX file
 		if (!f.open(file))
@@ -341,7 +343,7 @@ void GraphicsManager::loadPCX320(byte *surface, const Common::String &file, byte
 
 	f.read(surface, 128);
 	int imageSize = filesize - 896;
-	byte *ptr = _vm->_globals.allocMemory(65024);
+	byte *ptr = _vm->_globals->allocMemory(65024);
 	size_t curBufSize;
 	int imageNumb;
 	int imageDataSize;
@@ -392,18 +394,14 @@ void GraphicsManager::loadPCX320(byte *surface, const Common::String &file, byte
 	f.read(palette, 768);
 	f.close();
 
-	_vm->_globals.freeMemory(ptr);
+	_vm->_globals->freeMemory(ptr);
 }
 
 // Clear Palette
-// CHECKME: Some versions of the game don't include it, some contains nothing more than 
-// than a loop doing nothing, some others just map the last value. While debugging, it
-// seems that this function is called once the palette is already cleared, so it would be useless
-// This code could most likely be removed.
 void GraphicsManager::clearPalette() {
-	uint16 col0 = mapRGB(0, 0, 0);
-	for (int i = 0; i < 512; i += 2)
-		WRITE_LE_UINT16(&SD_PIXELS[i], col0);
+	// As weird as it sounds, this is what the original Linux executable does, 
+	// and not a full array clear.
+	SD_PIXELS[0] = 0;
 }
 
 void GraphicsManager::setScreenWidth(int pitch) {
@@ -418,7 +416,7 @@ void GraphicsManager::m_scroll16(const byte *surface, int xs, int ys, int width,
 
 	assert(_videoPtr);
 	const byte *srcP = xs + _lineNbr2 * ys + surface;
-	byte *destP = (byte *)_videoPtr->pixels + destX * 2 + WinScan * destY;
+	byte *destP = (byte *)_videoPtr + destX * 2 + WinScan * destY;
 
 	for (int yp = 0; yp < height; ++yp) {
 		// Copy over the line, using the source pixels as lookups into the pixels palette
@@ -437,6 +435,7 @@ void GraphicsManager::m_scroll16(const byte *surface, int xs, int ys, int width,
 	}
 
 	unlockScreen();
+	addRefreshRect(destX, destY, destX + width, destY + height);
 }
 
 // TODO: See if PAL_PIXELS can be converted to a uint16 array
@@ -449,11 +448,11 @@ void GraphicsManager::m_scroll16A(const byte *surface, int xs, int ys, int width
 
 	assert(_videoPtr);
 	const byte *srcP = xs + _lineNbr2 * ys + surface;
-	byte *destP = (byte *)_videoPtr->pixels + destX + destX + WinScan * destY;
+	byte *destP = (byte *)_videoPtr + destX + destX + WinScan * destY;
 	int yNext = height;
-	Agr_x = 0;
-	Agr_y = 0;
-	Agr_Flag_y = false;
+	_enlargedX = 0;
+	_enlargedY = 0;
+	_enlargedYFl = false;
 
 	do {
 		for (;;) {
@@ -462,14 +461,14 @@ void GraphicsManager::m_scroll16A(const byte *surface, int xs, int ys, int width
 			xCtr = width;
 			yCtr = yNext;
 			palette = PAL_PIXELS;
-			Agr_x = 0;
+			_enlargedX = 0;
 
 			do {
 				destP[0] = palette[2 * srcP[0]];
 				destP[1] = palette[(2 * srcP[0]) + 1];
 				destP += 2;
-				if (Agr_x >= 100) {
-					Agr_x -= 100;
+				if (_enlargedX >= 100) {
+					_enlargedX -= 100;
 					destP[0] = palette[2 * srcP[0]];
 					destP[1] = palette[(2 * srcP[0]) + 1];
 					destP += 2;
@@ -481,20 +480,22 @@ void GraphicsManager::m_scroll16A(const byte *surface, int xs, int ys, int width
 			yNext = yCtr;
 			srcP = srcCopyP;
 			destP = WinScan + destCopyP;
-			if (Agr_Flag_y)
+			if (_enlargedYFl)
 				break;
 
-			if (Agr_y >= 0 && Agr_y < 100)
+			if (_enlargedY >= 0 && _enlargedY < 100)
 				break;
 
-			Agr_y -= 100;
-			Agr_Flag_y = true;
+			_enlargedY -= 100;
+			_enlargedYFl = true;
 		}
 
-		Agr_Flag_y = false;
+		_enlargedYFl = false;
 		srcP = _lineNbr2 + srcCopyP;
 		yNext = yCtr - 1;
 	} while (yCtr != 1);
+
+	addRefreshRect(destX, destY, destX + width, destY + width);
 }
 
 void GraphicsManager::Copy_Vga16(const byte *surface, int xp, int yp, int width, int height, int destX, int destY) {
@@ -507,7 +508,7 @@ void GraphicsManager::Copy_Vga16(const byte *surface, int xp, int yp, int width,
 
 	assert(_videoPtr);
 	const byte *srcP = surface + xp + 320 * yp;
-	byte *destP = (byte *)_videoPtr->pixels + 30 * WinScan + destX + destX + destX + destX + WinScan * 2 * destY;
+	byte *destP = (byte *)_videoPtr + 30 * WinScan + destX + destX + destX + destX + WinScan * 2 * destY;
 	int yCount = height;
 	int xCount = width;
 
@@ -532,6 +533,8 @@ void GraphicsManager::Copy_Vga16(const byte *surface, int xp, int yp, int width,
 		srcP = loopSrcP + 320;
 		yCount = yCtr - 1;
 	} while (yCtr != 1);
+
+	addRefreshRect(destX, destY, destX + width, destY + width);
 }
 
 /** 
@@ -560,18 +563,18 @@ void GraphicsManager::fadeIn(const byte *palette, int step, const byte *surface)
 
 		// Set the transition palette and refresh the screen
 		setPaletteVGA256(palData2);
-		m_scroll16(surface, _vm->_eventsManager._startPos.x, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
+		m_scroll16(surface, _vm->_eventsManager->_startPos.x, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
 		updateScreen();
 
 		// Added a delay in order to see the fading
-		_vm->_eventsManager.delay(20);
+		_vm->_eventsManager->delay(20);
 	}
 
 	// Set the final palette
 	setPaletteVGA256(palette);
 
 	// Refresh the screen
-	m_scroll16(surface, _vm->_eventsManager._startPos.x, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
+	m_scroll16(surface, _vm->_eventsManager->_startPos.x, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
 	updateScreen();
 }
 
@@ -580,7 +583,7 @@ void GraphicsManager::fadeIn(const byte *palette, int step, const byte *surface)
  */
 void GraphicsManager::fadeOut(const byte *palette, int step, const byte *surface) {
 	byte palData[PALETTE_BLOCK_SIZE];
-	if ((step > 1) && (palette) && (!_vm->_eventsManager._escKeyFl)) {
+	if ((step > 1) && (palette) && (!_vm->_eventsManager->_escKeyFl)) {
 		int fadeStep = step;
 		for (int fadeIndex = 0; fadeIndex < fadeStep; fadeIndex++) {
 			for (int palOffset = 0; palOffset < PALETTE_BLOCK_SIZE; palOffset += 3) {
@@ -590,10 +593,10 @@ void GraphicsManager::fadeOut(const byte *palette, int step, const byte *surface
 			}
 
 			setPaletteVGA256(palData);
-			m_scroll16(surface, _vm->_eventsManager._startPos.x, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
+			m_scroll16(surface, _vm->_eventsManager->_startPos.x, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
 			updateScreen();
 
-			_vm->_eventsManager.delay(20);
+			_vm->_eventsManager->delay(20);
 		}
 	}
 
@@ -602,8 +605,9 @@ void GraphicsManager::fadeOut(const byte *palette, int step, const byte *surface
 		palData[i] = 0;
 
 	setPaletteVGA256(palData);
-	m_scroll16(surface, _vm->_eventsManager._startPos.x, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
-	return updateScreen();
+	m_scroll16(surface, _vm->_eventsManager->_startPos.x, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
+
+	updateScreen();
 }
 
 /** 
@@ -668,7 +672,7 @@ void GraphicsManager::fadeInBreakout() {
 /** 
  * Fade out used by for the breakout mini-game
  */
-void GraphicsManager::fateOutBreakout() {
+void GraphicsManager::fadeOutBreakout() {
 	byte palette[PALETTE_EXT_BLOCK_SIZE];
 
 	memset(palette, 0, PALETTE_EXT_BLOCK_SIZE);
@@ -686,7 +690,7 @@ void GraphicsManager::setPaletteVGA256(const byte *palette) {
 
 void GraphicsManager::setPaletteVGA256WithRefresh(const byte *palette, const byte *surface) {
 	changePalette(palette);
-	m_scroll16(surface, _vm->_eventsManager._startPos.x, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
+	m_scroll16(surface, _vm->_eventsManager->_startPos.x, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
 	updateScreen();
 }
 
@@ -727,6 +731,11 @@ uint16 GraphicsManager::mapRGB(byte r, byte g, byte b) {
 
 void GraphicsManager::updateScreen() {
 	// TODO: Is this okay here?
+	// Display any aras of the screen that need refreshing
+	displayDirtyRects();
+	displayRefreshRects();
+
+	// Update the screen
 	g_system->updateScreen();
 }
 
@@ -817,7 +826,7 @@ void GraphicsManager::copyVideoVbe16(const byte *srcData) {
 			if (srcByte == 211) {
 				int pixelCount = srcP[1];
 				int pixelIndex = srcP[2];
-				byte *destP = (byte *)_videoPtr->pixels + destOffset * 2;
+				byte *destP = (byte *)_videoPtr + destOffset * 2;
 				destOffset += pixelCount;
 
 				while (pixelCount--) {
@@ -830,7 +839,7 @@ void GraphicsManager::copyVideoVbe16(const byte *srcData) {
 			} else {
 				int pixelCount = srcByte - 211;
 				int pixelIndex = srcP[1];
-				byte *destP = (byte *)_videoPtr->pixels + destOffset * 2;
+				byte *destP = (byte *)_videoPtr + destOffset * 2;
 				destOffset += pixelCount;
 
 				while (pixelCount--) {
@@ -842,7 +851,7 @@ void GraphicsManager::copyVideoVbe16(const byte *srcData) {
 				srcP += 2;
 			}
 		} else {
-			byte *destP = (byte *)_videoPtr->pixels + destOffset * 2;
+			byte *destP = (byte *)_videoPtr + destOffset * 2;
 			destP[0] = PAL_PIXELS[2 * srcByte];
 			destP[1] = PAL_PIXELS[(2 * srcByte) + 1];
 			++srcP;
@@ -876,7 +885,7 @@ void GraphicsManager::copyVideoVbe16a(const byte *srcData) {
 			}
 		}
 
-		WRITE_LE_UINT16((byte *)_videoPtr->pixels + destOffset * 2, READ_LE_UINT16(PAL_PIXELS + 2 * srcByte));
+		WRITE_LE_UINT16((byte *)_videoPtr + destOffset * 2, READ_LE_UINT16(PAL_PIXELS + 2 * srcByte));
 		++srcP;
 		++destOffset;
 	}
@@ -1052,119 +1061,172 @@ void GraphicsManager::Sprite_Vesa(byte *surface, const byte *spriteData, int xp,
 
 void GraphicsManager::endDisplayBob() {
 	for (int idx = 1; idx <= 20; ++idx) {
-		if (_vm->_globals._animBqe[idx]._enabledFl)
-			_vm->_objectsManager.hideBob(idx);
+		if (_vm->_globals->_animBqe[idx]._enabledFl)
+			_vm->_objectsManager->hideBob(idx);
 	}
 
-	_vm->_eventsManager.refreshScreenAndEvents();
-	_vm->_eventsManager.refreshScreenAndEvents();
+	_vm->_eventsManager->refreshScreenAndEvents();
+	_vm->_eventsManager->refreshScreenAndEvents();
 
 	for (int idx = 1; idx <= 20; ++idx) {
-		if (_vm->_globals._animBqe[idx]._enabledFl)
-			_vm->_objectsManager.resetBob(idx);
+		if (_vm->_globals->_animBqe[idx]._enabledFl)
+			_vm->_objectsManager->resetBob(idx);
 	}
 
 	for (int idx = 1; idx <= 29; ++idx) {
-		_vm->_globals._lockedAnims[idx]._enableFl = false;
+		_vm->_globals->_lockedAnims[idx]._enableFl = false;
 	}
 
 	for (int idx = 1; idx <= 20; ++idx) {
-		_vm->_globals._animBqe[idx]._enabledFl = false;
+		_vm->_globals->_animBqe[idx]._enabledFl = false;
 	}
 }
 
 void GraphicsManager::displayAllBob() {
 	for (int idx = 1; idx <= 20; ++idx) {
-		if (_vm->_globals._animBqe[idx]._enabledFl)
-			_vm->_objectsManager.displayBob(idx);
+		if (_vm->_globals->_animBqe[idx]._enabledFl)
+			_vm->_objectsManager->displayBob(idx);
 	}
 }
 
-void GraphicsManager::resetVesaSegment() {
-	for (int idx = 0; idx <= NBBLOC; idx++)
-		BLOC[idx]._activeFl = false;
-
-	NBBLOC = 0;
+void GraphicsManager::resetDirtyRects() {
+	_dirtyRects.clear();
 }
 
-// Add VESA Segment
-void GraphicsManager::addVesaSegment(int x1, int y1, int x2, int y2) {
-	int tempX = x1;
-	bool addFlag = true;
-	if (x2 > _maxX)
-		x2 = _maxX;
-	if (y2 > _maxY)
-		y2 = _maxY;
-	if (x1 < _minX)
-		tempX = _minX;
-	if (y1 < _minY)
-		y1 = _minY;
+void GraphicsManager::resetRefreshRects() {
+	_refreshRects.clear();
+}
 
-	for (int blocIndex = 0; blocIndex <= NBBLOC; blocIndex++) {
-		BlocItem &bloc = BLOC[blocIndex];
-		if (bloc._activeFl && tempX >= bloc._x1 && x2 <= bloc._x2 && y1 >= bloc._y1 && y2 <= bloc._y2)
-			addFlag = false;
-	};
+// Add a game area dirty rectangle
+void GraphicsManager::addDirtyRect(int x1, int y1, int x2, int y2) {
+	x1 = CLIP(x1, _minX, _maxX);
+	y1 = CLIP(y1, _minY, _maxY);
+	x2 = CLIP(x2, _minX, _maxX);
+	y2 = CLIP(y2, _minY, _maxY);
 
-	if (addFlag) {
-		assert(NBBLOC < 250);
-		BlocItem &bloc = BLOC[++NBBLOC];
+	if ((x2 > x1) && (y2 > y1))	
+		addRectToArray(_dirtyRects, Common::Rect(x1, y1, x2, y2));
+}
 
-		bloc._activeFl = true;
-		bloc._x1 = tempX;
-		bloc._x2 = x2;
-		bloc._y1 = y1;
-		bloc._y2 = y2;
+// Add a refresh rect
+void GraphicsManager::addRefreshRect(int x1, int y1, int x2, int y2) {
+	x1 = MAX(x1, 0);
+	y1 = MAX(y1, 0);
+	x2 = MIN(x2, SCREEN_WIDTH);
+	y2 = MIN(y2, SCREEN_HEIGHT);
+
+	if ((x2 > x1) && (y2 > y1))
+		addRectToArray(_refreshRects, Common::Rect(x1, y1, x2, y2));
+}
+
+void GraphicsManager::addRectToArray(Common::Array<Common::Rect> &rects, const Common::Rect &newRect) {
+	// Scan for an intersection with existing rects
+	uint rectIndex;
+	for (rectIndex = 0; rectIndex < rects.size(); ++rectIndex) {
+		Common::Rect &r = rects[rectIndex];
+		
+		if (r.intersects(newRect)) {
+			// Rect either intersects or is completely inside existing one, so extend existing one as necessary
+			r.extend(newRect);
+			break;
+		}
+	}
+	if (rectIndex == rects.size()) {
+		// Rect not intersecting any existing one, so add it in
+		assert(rects.size() < DIRTY_RECTS_SIZE);
+		rects.push_back(newRect);
+	}
+
+	// Take care of merging the existing rect list. This is done as a separate check even if
+	// a previous extending above has been done, since the merging of the new rect above may
+	// result in further rects now able to be merged
+
+	for (int srcIndex = rects.size() - 1; srcIndex > 0; --srcIndex) {
+		const Common::Rect &srcRect = rects[srcIndex];
+
+		// Loop through all the other rects to see if it intersects them
+		for (int destIndex = srcIndex - 1; destIndex >= 0; --destIndex) {
+			if (rects[destIndex].intersects(srcRect)) {
+				// Found an intersection, so extend the found one, and delete the original
+				rects[destIndex].extend(srcRect);
+				rects.remove_at(srcIndex);
+				break;
+			}
+		}
 	}
 }
 
-// Display VESA Segment
-void GraphicsManager::displayVesaSegment() {
-	if (NBBLOC == 0)
+// Draw any game dirty rects onto the screen intermediate surface
+void GraphicsManager::displayDirtyRects() {
+	if (_dirtyRects.size() == 0)
 		return;
 
 	lockScreen();
+	
+	// Refresh the entire screen 
+	for (uint idx = 0; idx < _dirtyRects.size(); ++idx) {
+		Common::Rect &r = _dirtyRects[idx];
+		Common::Rect dstRect;
 
-	for (int idx = 1; idx <= NBBLOC; ++idx) {
-		BlocItem &bloc = BLOC[idx];
-		Common::Rect &dstRect = dstrect[idx - 1];
-		if (!bloc._activeFl)
-			continue;
-
-		if (_vm->_eventsManager._breakoutFl) {
-			Copy_Vga16(_vesaBuffer, bloc._x1, bloc._y1, bloc._x2 - bloc._x1, bloc._y2 - bloc._y1, bloc._x1, bloc._y1);
-			dstRect.left = bloc._x1 * 2;
-			dstRect.top = bloc._y1 * 2 + 30;
-			dstRect.setWidth((bloc._x2 - bloc._x1) * 2);
-			dstRect.setHeight((bloc._y2 - bloc._y1) * 2);
-		} else if (bloc._x2 > _vm->_eventsManager._startPos.x && bloc._x1 < _vm->_eventsManager._startPos.x + SCREEN_WIDTH) {
-			if (bloc._x1 < _vm->_eventsManager._startPos.x)
-				bloc._x1 = _vm->_eventsManager._startPos.x;
-			if (bloc._x2 > _vm->_eventsManager._startPos.x + SCREEN_WIDTH)
-				bloc._x2 = _vm->_eventsManager._startPos.x + SCREEN_WIDTH;
+		if (_vm->_eventsManager->_breakoutFl) {
+			Copy_Vga16(_vesaBuffer, r.left, r.top, r.right - r.left, r.bottom - r.top, r.left, r.top);
+			dstRect.left = r.left * 2;
+			dstRect.top = r.top * 2 + 30;
+			dstRect.setWidth((r.right - r.left) * 2);
+			dstRect.setHeight((r.bottom - r.top) * 2);
+		} else if (r.right > _vm->_eventsManager->_startPos.x && r.left < _vm->_eventsManager->_startPos.x + SCREEN_WIDTH) {
+			if (r.left < _vm->_eventsManager->_startPos.x)
+				r.left = _vm->_eventsManager->_startPos.x;
+			if (r.right > _vm->_eventsManager->_startPos.x + SCREEN_WIDTH)
+				r.right = _vm->_eventsManager->_startPos.x + SCREEN_WIDTH;
 
 			// WORKAROUND: Original didn't lock the screen for access
 			lockScreen();
-			m_scroll16(_vesaBuffer, bloc._x1, bloc._y1, bloc._x2 - bloc._x1, bloc._y2 - bloc._y1, bloc._x1 - _vm->_eventsManager._startPos.x, bloc._y1);
+			m_scroll16(_vesaBuffer, r.left, r.top, r.right - r.left, r.bottom - r.top, r.left - _vm->_eventsManager->_startPos.x, r.top);
 
-			dstRect.left = bloc._x1 - _vm->_eventsManager._startPos.x;
-			dstRect.top = bloc._y1;
-			dstRect.setWidth(bloc._x2 - bloc._x1);
-			dstRect.setHeight(bloc._y2 - bloc._y1);
+			dstRect.left = r.left - _vm->_eventsManager->_startPos.x;
+			dstRect.top = r.top;
+			dstRect.setWidth(r.right - r.left);
+			dstRect.setHeight(r.bottom - r.top);
 
 			unlockScreen();
 		}
 
-		BLOC[idx]._activeFl = false;
+		// If it's a valid rect, then add it to the list of areas to refresh on the screen
+		if (dstRect.isValidRect() && dstRect.width() > 0 && dstRect.height() > 0)
+			addRectToArray(_refreshRects, dstRect);
 	}
 
-	NBBLOC = 0;
 	unlockScreen();
+	resetDirtyRects();
+}
+
+void GraphicsManager::displayRefreshRects() {
+	Graphics::Surface *screenSurface = NULL;
+	if (_showDirtyRects) {
+		screenSurface = g_system->lockScreen();
+		g_system->copyRectToScreen(_screenBuffer, WinScan, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+	}
+	// Loop through copying over any  specified rects to the screen
+	for (uint idx = 0; idx < _refreshRects.size(); ++idx) {
+		const Common::Rect &r = _refreshRects[idx];
+
+		byte *srcP = _screenBuffer + WinScan * r.top + (r.left * 2);
+		g_system->copyRectToScreen(srcP, WinScan, r.left, r.top, r.width(), r.height());
+
+		if (_showDirtyRects)
+			screenSurface->frameRect(r, 0xffffff);
+	}
+
+	if (_showDirtyRects)
+		g_system->unlockScreen();
+
+	resetRefreshRects();
 }
 
 void GraphicsManager::AFFICHE_SPEEDVGA(const byte *objectData, int xp, int yp, int idx, bool addSegment) {
-	int width = _vm->_objectsManager.getWidth(objectData, idx);
-	int height = _vm->_objectsManager.getHeight(objectData, idx);
+	int width = _vm->_objectsManager->getWidth(objectData, idx);
+	int height = _vm->_objectsManager->getHeight(objectData, idx);
 	if (*objectData == 78) {
 		Affiche_Perfect(_vesaScreen, objectData, xp + 300, yp + 300, idx, 0, 0, false);
 		Affiche_Perfect(_vesaBuffer, objectData, xp + 300, yp + 300, idx, 0, 0, false);
@@ -1173,7 +1235,7 @@ void GraphicsManager::AFFICHE_SPEEDVGA(const byte *objectData, int xp, int yp, i
 		Sprite_Vesa(_vesaScreen, objectData, xp + 300, yp + 300, idx);
 	}
 	if (addSegment)
-		addVesaSegment(xp, yp, xp + width, yp + height);
+		addDirtyRect(xp, yp, xp + width, yp + height);
 }
 
 /**
@@ -1185,7 +1247,7 @@ void GraphicsManager::copy16bFromSurfaceScaleX2(const byte *surface) {
 
 	assert(_videoPtr);
 	const byte *curSurface = surface;
-	byte *destPtr = 30 * WinScan + (byte *)_videoPtr->pixels;
+	byte *destPtr = 30 * WinScan + (byte *)_videoPtr;
 	for (int y = 200; y; y--) {
 		byte *oldDestPtr = destPtr;
 		for (int x = 320; x; x--) {
@@ -1284,23 +1346,23 @@ void GraphicsManager::Affiche_Perfect(byte *surface, const byte *srcData, int xp
 
 	byte *dest1P = xp300 + _lineNbr2 * (yp300 - 300) - 300 + surface;
 	if (zoom2) {
-		Agr_x = 0;
-		Agr_y = 0;
-		Agr_Flag_y = false;
-		Agr_Flag_x = false;
+		_enlargedX = 0;
+		_enlargedY = 0;
+		_enlargedYFl = false;
+		_enlargedXFl = false;
 		_width = spriteWidth;
 		int zoomedWidth = zoomIn(spriteWidth, zoom2);
 		int zoomedHeight = zoomIn(spriteHeight1, zoom2);
 		if (flipFl) {
-			byte *v29 = zoomedWidth + dest1P;
+			byte *clippedDestP = zoomedWidth + dest1P;
 			if (_posYClipped) {
 				if (_posYClipped < 0 || _posYClipped >= zoomedHeight)
 					return;
-				int v30 = 0;
-				while (zoomIn(++v30, zoom2) < _posYClipped)
+				int hiddenHeight = 0;
+				while (zoomIn(++hiddenHeight, zoom2) < _posYClipped)
 					;
-				spritePixelsP += _width * v30;
-				v29 += _lineNbr2 * _posYClipped;
+				spritePixelsP += _width * hiddenHeight;
+				clippedDestP += _lineNbr2 * _posYClipped;
 				zoomedHeight -= _posYClipped;
 			}
 			if (zoomedHeight > clip_y1)
@@ -1311,64 +1373,64 @@ void GraphicsManager::Affiche_Perfect(byte *surface, const byte *srcData, int xp
 				zoomedWidth -= _posXClipped;
 			}
 			if (zoomedWidth > clip_x1) {
-				int v32 = zoomedWidth - clip_x1;
-				v29 -= v32;
-				int v33 = 0;
-				while (zoomIn(++v33, zoom2) < v32)
+				int clippedZoomedWidth = zoomedWidth - clip_x1;
+				clippedDestP -= clippedZoomedWidth;
+				int closestWidth = 0;
+				while (zoomIn(++closestWidth, zoom2) < clippedZoomedWidth)
 					;
-				spritePixelsP += v33;
+				spritePixelsP += closestWidth;
 				zoomedWidth = clip_x1;
 			}
-			int v63;
+			int curHeight;
 			do {
 				for (;;) {
-					v63 = zoomedHeight;
-					byte *v53 = v29;
+					curHeight = zoomedHeight;
+					byte *oldDestP = clippedDestP;
 					const byte *oldSpritePixelsP = spritePixelsP;
-					Agr_Flag_x = false;
-					Agr_x = 0;
-					for (int v35 = zoomedWidth; v35; Agr_Flag_x = false, v35--) {
+					_enlargedXFl = false;
+					_enlargedX = 0;
+					for (int i = zoomedWidth; i; _enlargedXFl = false, i--) {
 						for (;;) {
 							if (*spritePixelsP)
-								*v29 = *spritePixelsP;
-							--v29;
+								*clippedDestP = *spritePixelsP;
+							--clippedDestP;
 							++spritePixelsP;
-							if (!Agr_Flag_x)
-								Agr_x += zoom2;
-							if (Agr_x >= 0 && Agr_x < 100)
+							if (!_enlargedXFl)
+								_enlargedX += zoom2;
+							if (_enlargedX >= 0 && _enlargedX < 100)
 								break;
-							Agr_x -= 100;
+							_enlargedX -= 100;
 							--spritePixelsP;
-							Agr_Flag_x = true;
-							--v35;
-							if (!v35)
+							_enlargedXFl = true;
+							--i;
+							if (!i)
 								break;
 						}
 					}
 					spritePixelsP = _width + oldSpritePixelsP;
-					v29 = _lineNbr2 + v53;
-					if (!Agr_Flag_y)
-						Agr_y += zoom2;
-					if ((uint16)Agr_y < 100)
+					clippedDestP = _lineNbr2 + oldDestP;
+					if (!_enlargedYFl)
+						_enlargedY += zoom2;
+					if (_enlargedY  >= 0 && _enlargedY < 100)
 						break;
-					Agr_y -= 100;
+					_enlargedY -= 100;
 					spritePixelsP = oldSpritePixelsP;
-					Agr_Flag_y = true;
-					zoomedHeight = v63 - 1;
-					if (v63 == 1)
+					_enlargedYFl = true;
+					zoomedHeight = curHeight - 1;
+					if (curHeight == 1)
 						return;
 				}
-				Agr_Flag_y = false;
-				zoomedHeight = v63 - 1;
-			} while (v63 != 1);
+				_enlargedYFl = false;
+				zoomedHeight = curHeight - 1;
+			} while (curHeight != 1);
 		} else {
 			if (_posYClipped) {
 				if (_posYClipped >= zoomedHeight)
 					return;
-				int v23 = 0;
-				while (zoomIn(++v23, zoom2) < _posYClipped)
+				int closerHeight = 0;
+				while (zoomIn(++closerHeight, zoom2) < _posYClipped)
 					;
-				spritePixelsP += _width * v23;
+				spritePixelsP += _width * closerHeight;
 				dest1P += _lineNbr2 * _posYClipped;
 				zoomedHeight -= _posYClipped;
 			}
@@ -1377,92 +1439,90 @@ void GraphicsManager::Affiche_Perfect(byte *surface, const byte *srcData, int xp
 			if (_posXClipped) {
 				if (_posXClipped >= zoomedWidth)
 					return;
-				int v26 = 0;
-				while (zoomIn(++v26, zoom2) < _posXClipped)
+				int closerWidth = 0;
+				while (zoomIn(++closerWidth, zoom2) < _posXClipped)
 					;
-				spritePixelsP += v26;
+				spritePixelsP += closerWidth;
 				dest1P += _posXClipped;
 				zoomedWidth = zoomedWidth - _posXClipped;
 			}
 			if (zoomedWidth > clip_x1)
 				zoomedWidth = clip_x1;
 
-			int v60;
+			int curHeight;
 			do {
 				for (;;) {
-					v60 = zoomedHeight;
+					curHeight = zoomedHeight;
 					byte *oldDest1P = dest1P;
 					const byte *oldSpritePixelsP = spritePixelsP;
-					Agr_Flag_x = false;
-					Agr_x = 0;
-					for (int v28 = zoomedWidth; v28; Agr_Flag_x = false, v28--) {
+					_enlargedXFl = false;
+					_enlargedX = 0;
+					for (int i = zoomedWidth; i; _enlargedXFl = false, i--) {
 						for (;;) {
 							if (*spritePixelsP)
 								*dest1P = *spritePixelsP;
 							++dest1P;
 							++spritePixelsP;
-							if (!Agr_Flag_x)
-								Agr_x += zoom2;
-							if ((uint16)Agr_x < 100)
+							if (!_enlargedXFl)
+								_enlargedX += zoom2;
+							if (_enlargedX >= 0 && _enlargedX < 100)
 								break;
-							Agr_x -= 100;
+							_enlargedX -= 100;
 							--spritePixelsP;
-							Agr_Flag_x = true;
-							--v28;
-							if (!v28)
+							_enlargedXFl = true;
+							--i;
+							if (!i)
 								break;
 						}
 					}
 					spritePixelsP = _width + oldSpritePixelsP;
 					dest1P = _lineNbr2 + oldDest1P;
-					if (!Agr_Flag_y)
-						Agr_y += zoom2;
-					if ((uint16)Agr_y < 100)
+					if (!_enlargedYFl)
+						_enlargedY += zoom2;
+					if (_enlargedY >= 0 && _enlargedY < 100)
 						break;
-					Agr_y -= 100;
+					_enlargedY -= 100;
 					spritePixelsP = oldSpritePixelsP;
-					Agr_Flag_y = true;
-					zoomedHeight = v60 - 1;
-					if (v60 == 1)
+					_enlargedYFl = true;
+					zoomedHeight = curHeight - 1;
+					if (curHeight == 1)
 						return;
 				}
-				Agr_Flag_y = false;
-				zoomedHeight = v60 - 1;
-			} while (v60 != 1);
+				_enlargedYFl = false;
+				zoomedHeight = curHeight - 1;
+			} while (curHeight != 1);
 		}
 	} else if (zoom1) {
-		Red_x = 0;
-		Red_y = 0;
+		_reduceX = 0;
+		_reducedY = 0;
 		_width = spriteWidth;
-		Red = zoom1;
+		_zoomOutFactor = zoom1;
 		if (zoom1 < 100) {
-			int v37 = zoomOut(spriteWidth, Red);
+			int zoomedSpriteWidth = zoomOut(spriteWidth, _zoomOutFactor);
 			if (flipFl) {
-				byte *v40 = v37 + dest1P;
+				byte *curDestP = zoomedSpriteWidth + dest1P;
 				do {
-					int v65 = spriteHeight2;
-					byte *v55 = v40;
-					Red_y += Red;
-					if ((uint16)Red_y < 100) {
-						Red_x = 0;
-						int v42 = v37;
-						for (int v41 = _width; v41; v41--) {
-							Red_x += Red;
-							if ((uint16)Red_x < 100) {
-								if (v42 >= _posXClipped && v42 < clip_x1 && *spritePixelsP)
-									*v40 = *spritePixelsP;
-								--v40;
+					byte *oldDestP = curDestP;
+					_reducedY += _zoomOutFactor;
+					if (_reducedY >= 0 && _reducedY < 100) {
+						_reduceX = 0;
+						int curWidth = zoomedSpriteWidth;
+						for (int i = _width; i; i--) {
+							_reduceX += _zoomOutFactor;
+							if (_reduceX >= 0 && _reduceX < 100) {
+								if (curWidth >= _posXClipped && curWidth < clip_x1 && *spritePixelsP)
+									*curDestP = *spritePixelsP;
+								--curDestP;
 								++spritePixelsP;
-								--v42;
+								--curWidth;
 							} else {
-								Red_x -= 100;
+								_reduceX -= 100;
 								++spritePixelsP;
 							}
 						}
-						spriteHeight2 = v65;
-						v40 = _lineNbr2 + v55;
+						curDestP = _lineNbr2 + oldDestP;
 					} else {
-						Red_y -= 100;
+						_reducedY -= 100;
 						spritePixelsP += _width;
 					}
 					--spriteHeight2;
@@ -1471,27 +1531,27 @@ void GraphicsManager::Affiche_Perfect(byte *surface, const byte *srcData, int xp
 				do {
 					int oldSpriteHeight = spriteHeight2;
 					byte *oldDest1P = dest1P;
-					Red_y += Red;
-					if ((uint16)Red_y < 100) {
-						Red_x = 0;
-						int v39 = 0;
+					_reducedY += _zoomOutFactor;
+					if (_reducedY >= 0 && _reducedY < 100) {
+						_reduceX = 0;
+						int curX = 0;
 						for (int i = _width; i; i--) {
-							Red_x += Red;
-							if ((uint16)Red_x < 100) {
-								if (v39 >= _posXClipped && v39 < clip_x1 && *spritePixelsP)
+							_reduceX += _zoomOutFactor;
+							if (_reduceX >= 0 && _reduceX < 100) {
+								if (curX >= _posXClipped && curX < clip_x1 && *spritePixelsP)
 									*dest1P = *spritePixelsP;
 								++dest1P;
 								++spritePixelsP;
-								++v39;
+								++curX;
 							} else {
-								Red_x -= 100;
+								_reduceX -= 100;
 								++spritePixelsP;
 							}
 						}
 						spriteHeight2 = oldSpriteHeight;
 						dest1P = _lineNbr2 + oldDest1P;
 					} else {
-						Red_y -= 100;
+						_reducedY -= 100;
 						spritePixelsP += _width;
 					}
 					--spriteHeight2;
@@ -1581,8 +1641,8 @@ void GraphicsManager::Affiche_Perfect(byte *surface, const byte *srcData, int xp
  * Fast Display
  */
 void GraphicsManager::fastDisplay(const byte *spriteData, int xp, int yp, int spriteIndex, bool addSegment) {
-	int width = _vm->_objectsManager.getWidth(spriteData, spriteIndex);
-	int height = _vm->_objectsManager.getHeight(spriteData, spriteIndex);
+	int width = _vm->_objectsManager->getWidth(spriteData, spriteIndex);
+	int height = _vm->_objectsManager->getHeight(spriteData, spriteIndex);
 
 	if (*spriteData == 78) {
 		Affiche_Perfect(_vesaScreen, spriteData, xp + 300, yp + 300, spriteIndex, 0, 0, false);
@@ -1592,7 +1652,7 @@ void GraphicsManager::fastDisplay(const byte *spriteData, int xp, int yp, int sp
 		Sprite_Vesa(_vesaScreen, spriteData, xp + 300, yp + 300, spriteIndex);
 	}
 	if (addSegment)
-		addVesaSegment(xp, yp, xp + width, yp + height);
+		addDirtyRect(xp, yp, xp + width, yp + height);
 }
 
 void GraphicsManager::copySurface(const byte *surface, int x1, int y1, int width, int height, byte *destSurface, int destX, int destY) {
@@ -1618,7 +1678,7 @@ void GraphicsManager::copySurface(const byte *surface, int x1, int y1, int width
 	if (croppedWidth > 0 && croppedHeight > 0) {
 		int height2 = croppedHeight;
 		Copy_Mem(surface, left, top, croppedWidth, croppedHeight, destSurface, destX, destY);
-		addVesaSegment(left, top, left + croppedWidth, top + height2);
+		addDirtyRect(left, top, left + croppedWidth, top + height2);
 	}
 }
 
@@ -1641,7 +1701,7 @@ void GraphicsManager::Copy_Mem(const byte *srcSurface, int x1, int y1, uint16 wi
 }
 
 // Display Font
-void GraphicsManager::displayFont(byte *surface, const byte *spriteData, int xp, int yp, int characterIndex, int colour) {
+void GraphicsManager::displayFont(byte *surface, const byte *spriteData, int xp, int yp, int characterIndex, int color) {
 	const byte *spriteDataP = spriteData + 3;
 	for (int i = characterIndex; i; --i)
 		spriteDataP += READ_LE_UINT32(spriteDataP) + 16;
@@ -1664,7 +1724,7 @@ void GraphicsManager::displayFont(byte *surface, const byte *spriteData, int xp,
 			byte destByte = *spritePixelsP;
 			if (*spritePixelsP) {
 				if (destByte == 252)
-					destByte = colour;
+					destByte = color;
 				*destP = destByte;
 			}
 
@@ -1678,20 +1738,20 @@ void GraphicsManager::displayFont(byte *surface, const byte *spriteData, int xp,
 
 void GraphicsManager::initScreen(const Common::String &file, int mode, bool initializeScreen) {
 	Common::String filename = file + ".ini";
-	byte *ptr = _vm->_fileManager.searchCat(filename, RES_INI);
+	byte *ptr = _vm->_fileManager->searchCat(filename, RES_INI);
 
 	if (ptr == g_PTRNUL) {
-		ptr = _vm->_fileManager.loadFile(filename);
+		ptr = _vm->_fileManager->loadFile(filename);
 	}
 	if (!mode) {
 		filename = file + ".spr";
-		_vm->_globals.SPRITE_ECRAN = _vm->_globals.freeMemory(_vm->_globals.SPRITE_ECRAN);
+		_vm->_globals->SPRITE_ECRAN = _vm->_globals->freeMemory(_vm->_globals->SPRITE_ECRAN);
 		if (initializeScreen) {
-			_vm->_globals.SPRITE_ECRAN = _vm->_fileManager.searchCat(filename, RES_SLI);
-			if (_vm->_globals.SPRITE_ECRAN) {
-				_vm->_globals.SPRITE_ECRAN = _vm->_fileManager.loadFile(filename);
+			_vm->_globals->SPRITE_ECRAN = _vm->_fileManager->searchCat(filename, RES_SLI);
+			if (_vm->_globals->SPRITE_ECRAN) {
+				_vm->_globals->SPRITE_ECRAN = _vm->_fileManager->loadFile(filename);
 			} else {
-				_vm->_globals.SPRITE_ECRAN = _vm->_fileManager.loadFile("RES_SLI.RES");
+				_vm->_globals->SPRITE_ECRAN = _vm->_fileManager->loadFile("RES_SLI.RES");
 			}
 		}
 	}
@@ -1702,14 +1762,14 @@ void GraphicsManager::initScreen(const Common::String &file, int mode, bool init
 		int dataOffset = 1;
 
 		do {
-			int dataVal1 = _vm->_scriptManager.handleOpcode(ptr + 20 * dataOffset);
+			int dataVal1 = _vm->_scriptManager->handleOpcode(ptr + 20 * dataOffset);
 			if (_vm->shouldQuit())
 				return;
 
 			if (dataVal1 == 2)
-				dataOffset =  _vm->_scriptManager.handleGoto((ptr + 20 * dataOffset));
+				dataOffset =  _vm->_scriptManager->handleGoto((ptr + 20 * dataOffset));
 			if (dataVal1 == 3)
-				dataOffset =  _vm->_scriptManager.handleIf(ptr, dataOffset);
+				dataOffset =  _vm->_scriptManager->handleIf(ptr, dataOffset);
 			if (dataOffset == -1)
 				error("Error, defective IFF");
 			if (dataVal1 == 1 || dataVal1 == 4)
@@ -1718,17 +1778,17 @@ void GraphicsManager::initScreen(const Common::String &file, int mode, bool init
 				doneFlag = true;
 		} while (!doneFlag);
 	}
-	_vm->_globals.freeMemory(ptr);
-	_vm->_globals._answerBuffer = _vm->_globals.freeMemory(_vm->_globals._answerBuffer);
+	_vm->_globals->freeMemory(ptr);
+	_vm->_globals->_answerBuffer = _vm->_globals->freeMemory(_vm->_globals->_answerBuffer);
 
 	filename = file + ".rep";
-	byte *dataP = _vm->_fileManager.searchCat(filename, RES_REP);
+	byte *dataP = _vm->_fileManager->searchCat(filename, RES_REP);
 	if (dataP == g_PTRNUL)
-		dataP = _vm->_fileManager.loadFile(filename);
+		dataP = _vm->_fileManager->loadFile(filename);
 
-	_vm->_globals._answerBuffer = dataP;
-	_vm->_objectsManager._forceZoneFl = true;
-	_vm->_objectsManager._changeVerbFl = false;
+	_vm->_globals->_answerBuffer = dataP;
+	_vm->_objectsManager->_forceZoneFl = true;
+	_vm->_objectsManager->_changeVerbFl = false;
 }
 
 void GraphicsManager::NB_SCREEN(bool initPalette) {
@@ -1741,7 +1801,7 @@ void GraphicsManager::NB_SCREEN(bool initPalette) {
 		Trans_bloc2(_vesaBuffer, _colorTable, SCREEN_WIDTH * SCREEN_HEIGHT * 2);
 
 	lockScreen();
-	m_scroll16(_vesaBuffer, _vm->_eventsManager._startPos.x, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
+	m_scroll16(_vesaBuffer, _vm->_eventsManager->_startPos.x, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0, 0);
 	unlockScreen();
 
 	memcpy(_vesaScreen, _vesaBuffer, 614399);
@@ -1780,28 +1840,28 @@ void GraphicsManager::copyWinscanVbe(const byte *src, byte *dest) {
 void GraphicsManager::reduceScreenPart(const byte *srcSurface, byte *destSurface, int xp, int yp, int width, int height, int zoom) {
 	const byte *srcP = xp + _lineNbr2 * yp + srcSurface;
 	byte *destP = destSurface;
-	Red = zoom;
+	_zoomOutFactor = zoom;
 	_width = width;
-	Red_x = 0;
-	Red_y = 0;
+	_reduceX = 0;
+	_reducedY = 0;
 	if (zoom < 100) {
 		for (int yCtr = 0; yCtr < height; ++yCtr, srcP += _lineNbr2) {
-			Red_y += Red;
-			if (Red_y < 100) {
-				Red_x = 0;
+			_reducedY += _zoomOutFactor;
+			if (_reducedY < 100) {
+				_reduceX = 0;
 				const byte *lineSrcP = srcP;
 
 				for (int xCtr = 0; xCtr < _width; ++xCtr) {
-					Red_x += Red;
-					if (Red_x < 100) {
+					_reduceX += _zoomOutFactor;
+					if (_reduceX < 100) {
 						*destP++ = *lineSrcP++;
 					} else {
-						Red_x -= 100;
+						_reduceX -= 100;
 						++lineSrcP;
 					}
 				}
 			} else {
-				Red_y -= 100;
+				_reducedY -= 100;
 			}
 		}
 	}

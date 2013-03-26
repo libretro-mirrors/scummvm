@@ -39,8 +39,8 @@ struct SpriteItem {
 	int _zoomFactor;
 	bool _flipFl;
 	int _spriteIndex;
-	int field12;
-	int field14;
+	int _deltaX;
+	int _deltaY;
 	bool _rleFl;
 	bool _activeFl;
 	int _destX;
@@ -52,18 +52,18 @@ struct SpriteItem {
 };
 
 struct BobItem {
-	int field0;
+	int _bobMode;
 	byte *_spriteData;
 	int _xp;
 	int _yp;
 	int _frameIndex;
 	int _animDataIdx;
-	int field12;
-	int field14;
+	int _moveChange1;
+	int _moveChange2;
 	bool _disabledAnimationFl;
 	byte *_animData;
-	bool field1C;
-	int field1E;
+	bool _bobMode10;
+	int _bobModeChange;
 	int field20;
 	int field22;
 	bool field34; // Set to true in B_CACHE_OFF()
@@ -95,6 +95,7 @@ private:
 	bool _oldFlipFl;
 	int _curGestureFile;
 	byte *_gestureBuf;
+	int _homeRateCounter;
 
 	void sprite_alone(const byte *objectData, byte *sprite, int objIndex);
 	void removeObjectDataBuf();
@@ -164,17 +165,16 @@ public:
 	bool BOBTOUS;
 	bool OBSSEUL;
 
-	ObjectsManager();
+	ObjectsManager(HopkinsEngine *vm);
 	~ObjectsManager();
 
-	void setParent(HopkinsEngine *vm);
 	void clearAll();
 
 	int getWidth(const byte *objectData, int idx);
 	int getHeight(const byte *objectData, int idx);
 	byte *loadSprite(const Common::String &file);
 	void loadLinkFile(const Common::String &file);
-	void addStaticSprite(const byte *spriteData, Common::Point pos, int idx, int spriteIndex, int zoomFactor, bool flipFl, int a8, int a9);
+	void addStaticSprite(const byte *spriteData, Common::Point pos, int idx, int spriteIndex, int zoomFactor, bool flipFl, int deltaX, int deltaY);
 	void animateSprite(int idx);
 	void removeSprite(int idx);
 	void setSpriteX(int idx, int xp);
@@ -222,12 +222,14 @@ public:
 	void doActionLeft(int idx);
 	void doActionDiagRight(int idx);
 	void doActionDiagLeft(int idx);
+	byte *loadObjectFromFile(int objIndex, bool mode);
+
+	void resetHomeRateCounter() { _homeRateCounter = 0; }
 
 	void PERSONAGE(const Common::String &backgroundFile, const Common::String &linkFile,
 		const Common::String &animFile, const Common::String &s4, int soundNum, bool initializeScreen);
 	void PERSONAGE2(const Common::String &backgroundFile, const Common::String &linkFile,
 		const Common::String &animFile, const Common::String &s4, int soundNum, bool initializeScreen);
-	byte *loadObjectFromFile(int objIndex, bool mode);
 	void OPTI_OBJET();
 	void SPACTION(byte *spriteData, const Common::String &animationSeq, int speed, bool flipFl);
 	void BOB_VIVANT(int idx);

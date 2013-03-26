@@ -38,7 +38,7 @@ struct LigneZoneItem {
 	int16 *_zoneData;
 };
 
-#define INVALID_LINEIDX 1300
+#define INVALID_LINE_VALUE 1300
 
 struct RouteItem;
 
@@ -128,6 +128,7 @@ private:
 	int16 *_lineBuf;
 	LigneItem _lineItem[400];
 	RouteItem _bestRoute[8001];
+	int _zoneSkipCount;
 
 	int checkInventoryHotspotsRow(int posX, int minZoneNum, bool lastRow);
 	void removeZoneLine(int idx);
@@ -157,9 +158,8 @@ public:
 	bool BOBZONE_FLAG[105];
 	ZonePItem ZONEP[106];
 
-	LinesManager();
+	LinesManager(HopkinsEngine *vm);
 	~LinesManager();
-	void setParent(HopkinsEngine *vm);
 	void clearAll();
 
 	void setMaxLineIdx(int idx);

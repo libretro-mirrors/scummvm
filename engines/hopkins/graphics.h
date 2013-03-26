@@ -24,6 +24,7 @@
 #define HOPKINS_GRAPHICS_H
 
 #include "common/scummsys.h"
+#include "common/array.h"
 #include "common/endian.h"
 #include "common/rect.h"
 #include "common/str.h"
@@ -31,6 +32,7 @@
 
 namespace Hopkins {
 
+#define DIRTY_RECTS_SIZE 250
 #define PALETTE_SIZE 256
 #define PALETTE_BLOCK_SIZE (PALETTE_SIZE * 3)
 #define PALETTE_EXT_BLOCK_SIZE 800
@@ -45,14 +47,6 @@ struct RGB8 {
 	byte b;
 };
 
-struct BlocItem {
-	uint16 _activeFl;
-	int _x1;
-	int _y1;
-	int _x2;
-	int _y2;
-};
-
 class HopkinsEngine;
 
 class GraphicsManager {
@@ -63,18 +57,18 @@ private:
 	bool _initGraphicsFl;
 	int _screenWidth;
 	int _screenHeight;
-	Graphics::Surface *_videoPtr;
+	byte *_videoPtr;
 	int _width;
 	int _posXClipped, _posYClipped;
 	bool _clipFl;
 	int _specialWidth;
 
 	byte SD_PIXELS[PALETTE_SIZE * 2];
-	int Agr_x, Agr_y;
-	bool Agr_Flag_x, Agr_Flag_y;
+	int _enlargedX, _enlargedY;
+	bool _enlargedXFl, _enlargedYFl;
 	int clip_x1, clip_y1;
-	int Red_x, Red_y;
-	int Red;
+	int _reduceX, _reducedY;
+	int _zoomOutFactor;
 
 	void loadScreen(const Common::String &file);
 	void loadPCX640(byte *surface, const Common::String &file, byte *palette, bool typeFlag);
@@ -94,6 +88,7 @@ public:
 	byte _oldPalette[PALETTE_EXT_BLOCK_SIZE];
 	byte *_vesaScreen;
 	byte *_vesaBuffer;
+	byte *_screenBuffer;
 	int _scrollOffset;
 	int _scrollPosX;
 	bool _largeScreenFl;
@@ -103,27 +98,40 @@ public:
 	int _minX, _minY;
 	int _maxX, _maxY;
 	bool _noFadingFl;
-	Common::Rect dstrect[50];
 	int _scrollStatus;
 	bool _skipVideoLockFl;
 	int _fadeDefaultSpeed;
 
-	int NBBLOC;
-	BlocItem BLOC[250];
+	/**
+	 * The _dirtyRects list contains paletted game areas that need to be redrawn. 
+	 * The _dstrect array is the list of areas of the screen that ScummVM needs to be redrawn.
+	 * Some areas, such as the animation managers, skip the _dirtyRects and use _dstrec directly.
+	 */
+	Common::Array<Common::Rect> _dirtyRects;
+	Common::Array<Common::Rect> _refreshRects;
+	bool _showDirtyRects;
+
 	int WinScan;
 	byte *PAL_PIXELS;
 	bool MANU_SCROLL;
 	int FADE_LINUX;
 public:
-	GraphicsManager();
+	GraphicsManager(HopkinsEngine *vm);
 	~GraphicsManager();
 
-	void setParent(HopkinsEngine *vm);
 	void lockScreen();
 	void unlockScreen();
 	void clearPalette();
 	void clearScreen();
-	void addVesaSegment(int x1, int y1, int x2, int y2);
+	void clearVesaScreen();
+	void resetDirtyRects();
+	void resetRefreshRects();
+	void addDirtyRect(int x1, int y1, int x2, int y2);
+	void addDirtyRect(const Common::Rect &r) { addDirtyRect(r.left, r.top, r.right, r.bottom); }
+	void addRefreshRect(int x1, int y1, int x2, int y2);
+	void addRectToArray(Common::Array<Common::Rect> &rects, const Common::Rect &newRect);
+	void displayDirtyRects();
+	void displayRefreshRects();
 	void copySurface(const byte *surface, int x1, int y1, int width, int height, byte *destSurface, int destX, int destY);
 	void loadImage(const Common::String &file);
 	void loadVgaImage(const Common::String &file);
@@ -132,19 +140,17 @@ public:
 	void fadeInDefaultLength(const byte *surface);
 	void fadeInShort();
 	void fadeOutDefaultLength(const byte *surface);
-	void fateOutBreakout();
+	void fadeOutBreakout();
 	void fadeOutLong();
 	void fadeOutShort();
 	void fastDisplay(const byte *spriteData, int xp, int yp, int spriteIndex, bool addSegment = true);
-	void displayVesaSegment();
-	void resetVesaSegment();
 	void copyWinscanVbe3(const byte *srcData, byte *destSurface);
 	void copyWinscanVbe(const byte *srcP, byte *destP);
 	void copyVideoVbe16(const byte *srcData);
 	void copyVideoVbe16a(const byte *srcData);
 	void copySurfaceRect(const byte *srcSurface, byte *destSurface, int xs, int ys, int width, int height);
 	void restoreSurfaceRect(byte *destSurface, const byte *src, int xp, int yp, int width, int height);
-	void displayFont(byte *surface, const byte *spriteData, int xp, int yp, int characterIndex, int colour);
+	void displayFont(byte *surface, const byte *spriteData, int xp, int yp, int characterIndex, int color);
 	void drawHorizontalLine(byte *surface, int xp, int yp, uint16 width, byte col);
 	void drawVerticalLine(byte *surface, int xp, int yp, int height, byte col);
 	void initColorTable(int minIndex, int maxIndex, byte *palette);

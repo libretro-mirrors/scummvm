@@ -62,7 +62,9 @@ const int HOPKINS_PERSO_2[] = {
 		0, 2, 0, 2, 0, 2, 0, 1, 0, 2, 0, 2
 };
 
-Globals::Globals() {
+Globals::Globals(HopkinsEngine *vm) {
+	_vm = vm;
+
 	// Set up the special g_PTRNUL variable
 	g_PTRNUL = (byte *)malloc(16);
 	strcpy((char *)g_PTRNUL, "POINTERNULL");
@@ -126,7 +128,6 @@ Globals::Globals() {
 	_checkDistanceFl = false;
 	_characterType = 0;
 	_actionMoveTo = false;
-	Compteur = 0;
 	_actionDirection = DIR_NONE;
 
 	_creditsStartX = -1;
@@ -169,7 +170,6 @@ Globals::Globals() {
 	_oldZoneNum = 0;
 	_oldMouseX = 0;
 	_oldMouseY = 0;
-	compteur_71 = 0;
 	_forceHideText = false;
 }
 
@@ -185,10 +185,6 @@ Globals::~Globals() {
 	clearVBob();
 
 	free(g_PTRNUL);
-}
-
-void Globals::setParent(HopkinsEngine *vm) {
-	_vm = vm;
 }
 
 void Globals::setConfig() {
@@ -235,28 +231,26 @@ void Globals::clearAll() {
 
 	_boxWidth = 0;
 
-	_vm->_fontManager.clearAll();
+	_vm->_fontManager->clearAll();
 
 	initVBob();
 	_objectDataBuf = g_PTRNUL;
 	_curObjectFileNum = 0;
-	_vm->_eventsManager._objectBuf = g_PTRNUL;
-	_vm->_dialogsManager._inventWin1 = g_PTRNUL;
-	_vm->_dialogsManager._inventBuf2 = g_PTRNUL;
+	_vm->_dialogsManager->clearAll();
 	_answerBuffer = g_PTRNUL;
 	SPRITE_ECRAN = g_PTRNUL;
 	_saveData = (Savegame *)g_PTRNUL;
-	_vm->_objectsManager._curObjectIndex = 0;
+	_vm->_objectsManager->_curObjectIndex = 0;
 
-	_vm->_linesManager.clearAll();
-	_vm->_objectsManager.clearAll();
+	_vm->_linesManager->clearAll();
+	_vm->_objectsManager->clearAll();
 
 	_saveData = (Savegame *)malloc(sizeof(Savegame));
 	memset(_saveData, 0, sizeof(Savegame));
 
 	_boxWidth = 240;
 
-	_vm->_eventsManager._objectBuf = allocMemory(2500);
+	_vm->_eventsManager->clearAll();
 
 	_objectDataBuf = g_PTRNUL;
 }
@@ -292,7 +286,7 @@ void Globals::initAnimBqe() {
 
 void Globals::initVBob() {
 	for (int idx = 0; idx < 30; ++idx) {
-		VBob[idx].field4 = 0;
+		VBob[idx]._displayMode = 0;
 		VBob[idx]._xp = 0;
 		VBob[idx]._yp = 0;
 		VBob[idx]._frameIndex = 0;
@@ -304,7 +298,7 @@ void Globals::initVBob() {
 
 void Globals::clearVBob() {
 	for (int idx = 0; idx < 30; ++idx) {
-		VBob[idx].field4 = 0;
+		VBob[idx]._displayMode = 0;
 		VBob[idx]._xp = 0;
 		VBob[idx]._yp = 0;
 		VBob[idx]._frameIndex = 0;
@@ -316,7 +310,7 @@ void Globals::clearVBob() {
 
 // Load Object
 void Globals::loadObjects() {
-	byte *data = _vm->_fileManager.loadFile("OBJET.DAT");
+	byte *data = _vm->_fileManager->loadFile("OBJET.DAT");
 	byte *srcP = data;
 
 	for (int idx = 0; idx < 300; ++idx) {
@@ -363,8 +357,8 @@ void Globals::resetHidingItems() {
 		hid->_useCount = 0;
 		hid->_width = 0;
 		hid->_height = 0;
-		hid->field10 = false;
-		hid->field14 = 0;
+		hid->_resetUseCount = false;
+		hid->_yOffset = 0;
 	}
 
 	_hidingActiveFl = false;
@@ -380,7 +374,7 @@ void Globals::disableHiding() {
 
 void Globals::B_CACHE_OFF(int idx) {
 	assert(idx < 36);
-	_vm->_objectsManager._bob[idx].field34 = true;
+	_vm->_objectsManager->_bob[idx].field34 = true;
 }
 
 void Globals::resetHidingUseCount(int idx) {
@@ -394,27 +388,27 @@ void Globals::setHidingUseCount(int idx) {
 // Load Hiding Items
 void Globals::loadHidingItems(const Common::String &file) {
 	resetHidingItems();
-	byte *ptr = _vm->_fileManager.loadFile(file);
+	byte *ptr = _vm->_fileManager->loadFile(file);
 	Common::String filename = Common::String((const char *)ptr);
 
 	Common::File f;
 	if (!f.exists(filename))
 		return;
 
-	byte *spriteData = _vm->_fileManager.loadFile(filename);
+	byte *spriteData = _vm->_fileManager->loadFile(filename);
 	_hidingItemData[1] = spriteData;
 	int curBufIdx = 60;
 	for (int i = 0; i <= 21; i++) {
 		_hidingItem[i]._spriteIndex = READ_LE_INT16((uint16 *)ptr + curBufIdx);
 		_hidingItem[i]._x = READ_LE_INT16((uint16 *)ptr + curBufIdx + 1);
 		_hidingItem[i]._y = READ_LE_INT16((uint16 *)ptr + curBufIdx + 2);
-		_hidingItem[i].field14 = READ_LE_INT16((uint16 *)ptr + curBufIdx + 4);
+		_hidingItem[i]._yOffset = READ_LE_INT16((uint16 *)ptr + curBufIdx + 4);
 		if (spriteData == g_PTRNUL) {
 			_hidingItem[i]._useCount = 0;
 		} else {
 			_hidingItem[i]._spriteData = spriteData;
-			_hidingItem[i]._width = _vm->_objectsManager.getWidth(spriteData, _hidingItem[i]._spriteIndex);
-			_hidingItem[i]._height = _vm->_objectsManager.getHeight(spriteData, _hidingItem[i]._spriteIndex);
+			_hidingItem[i]._width = _vm->_objectsManager->getWidth(spriteData, _hidingItem[i]._spriteIndex);
+			_hidingItem[i]._height = _vm->_objectsManager->getHeight(spriteData, _hidingItem[i]._spriteIndex);
 			_hidingItem[i]._useCount = 1;
 		}
 

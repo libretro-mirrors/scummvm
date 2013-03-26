@@ -22,6 +22,14 @@ else ifeq ($(platform), osx)
    TARGET  := libretro.dylib
    DEFINES += -fPIC
    LDFLAGS += -dynamiclib -fPIC
+else ifeq ($(platform), qnx)
+   TARGET  := libretro.so
+   DEFINES += -fPIC
+   LDFLAGS += -shared -Wl,--version-script=../link.T -fPIC
+   CC = qcc -Vgcc_ntoarmv7le
+   CXX = QCC -Vgcc_ntoarmv7le
+   LD = QCC -Vgcc_ntoarmv7le
+   AR = qcc -Vgcc_ntoarmv7le
 else ifeq ($(platform), android)
    TARGET  := libretro_scummvm.so
    DEFINES += -fPIC -Wno-multichar
@@ -58,7 +66,7 @@ RM            = rm -f
 RM_REC        = rm -rf
 
 # Define build flags
-DEFINES       += -D__LIBRETRO__ -DNONSTANDARD_PORT -DUSE_RGB_COLOR -DDISABLE_COMMAND_LINE -DDISABLE_TEXT_CONSOLE
+DEFINES       += -D__LIBRETRO__ -DNONSTANDARD_PORT -DUSE_RGB_COLOR -DUSE_OSD -DDISABLE_COMMAND_LINE -DDISABLE_TEXT_CONSOLE -DFRONTEND_SUPPORTS_RGB565
 INCLUDES      += -I$(srcdir)/$(retrodir) -I. -I$(srcdir) -I$(srcdir)/engines
 EXECUTABLE    = $(TARGET)
 DEPDIR        = .deps
@@ -73,6 +81,9 @@ ENABLE_SKY = $(ENABLED)
 ENABLE_AGOS = $(ENABLED)
 ENABLE_AGI = $(ENABLED)
 ENABLE_SCI = $(ENABLED)
+ENABLE_MOHAWK = $(ENABLED)
+ENABLE_MYST = $(ENABLED)
+ENABLE_TINSEL = $(ENABLED)
 
 #
 OBJS :=	$(retrodir)libretro.o \

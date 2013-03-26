@@ -57,7 +57,7 @@ struct LockAnimItem {
 
 struct VBobItem {
 	byte *_spriteData;
-	int field4;
+	int _displayMode;
 	int _xp;
 	int _yp;
 	int _frameIndex;
@@ -101,8 +101,8 @@ struct HidingItem {
 	int _height;
 	int _useCount;
 	byte *_spriteData;
-	bool field10;
-	int field14;
+	bool _resetUseCount;
+	int _yOffset;
 };
 
 struct HopkinsItem {
@@ -194,7 +194,7 @@ struct Savegame {
 
 struct CreditItem {
 	bool _actvFl;
-	int _colour;
+	int _color;
 	int _linePosY;
 	int _lineSize;
 	byte _line[50];
@@ -311,12 +311,9 @@ public:
 	ListeItem Liste2[35];
 	BankItem Bank[8];
 	VBobItem VBob[30];
-	int Compteur;
-	int compteur_71;
 
-	Globals();
+	Globals(HopkinsEngine *vm);
 	~Globals();
-	void setParent(HopkinsEngine *vm);
 	byte *allocMemory(int count);
 	byte *freeMemory(byte *p);
 	void setConfig();

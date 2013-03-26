@@ -35,6 +35,19 @@
 #include "graphics/colormasks.h"
 #include "graphics/palette.h"
 #include "backends/saves/default/default-saves.h"
+#if defined(_WIN32)
+#include <direct.h>
+#ifdef _XBOX
+#include <xtl.h>
+#else
+#include <windows.h>
+#endif
+#elif defined(__CELLOS_LV2__)
+#include <sys/sys_time.h>
+#include <sys/timer.h>
+#else
+#include <time.h>
+#endif
 
 #include "libretro.h"
 
@@ -49,13 +62,11 @@ struct RetroPalette
 
     void set(const byte *colors, uint start, uint num)
     {
-        assert(colors && (start + num) <= 256);
         memcpy(_colors + start * 3, colors, num * 3);
     }
 
     void get(byte* colors, uint start, uint num)
     {
-        assert(colors && (start + num) <= 256);
         memcpy(colors, _colors + start * 3, num * 3);
     }
 
@@ -74,14 +85,13 @@ struct RetroPalette
 template<typename INPUT, typename OUTPUT>
 static void blit(Graphics::Surface& aOut, const Graphics::Surface& aIn, int aX, int aY, const RetroPalette& aColors, uint32 aKeyColor)
 {
-    assert(sizeof(OUTPUT) == aOut.format.bytesPerPixel && sizeof(INPUT) == aIn.format.bytesPerPixel);
+   /* assert trips */
+    //assert(sizeof(OUTPUT) == aOut.format.bytesPerPixel && sizeof(INPUT) == aIn.format.bytesPerPixel);
 
     for(int i = 0; i != aIn.h; i ++)
     {
         if((i + aY) < 0 || (i + aY) >= aOut.h)
-        {
-            continue;
-        }
+           continue;
 
         INPUT* const in = (INPUT*)aIn.pixels + (i * aIn.w);
         OUTPUT* const out = (OUTPUT*)aOut.pixels + ((i + aY) * aOut.w);
@@ -89,9 +99,7 @@ static void blit(Graphics::Surface& aOut, const Graphics::Surface& aIn, int aX, 
         for(int j = 0; j != aIn.w; j ++)
         {
             if((j + aX) < 0 || (j + aX) >= aOut.w)
-            {
-                continue;
-            }
+               continue;
 
             uint8 r, g, b;
 
@@ -99,13 +107,9 @@ static void blit(Graphics::Surface& aOut, const Graphics::Surface& aIn, int aX, 
             if(val != aKeyColor)
             {
                 if(aIn.format.bytesPerPixel == 1)
-                {
                     aColors.getColor(val, r, g, b);
-                }
                 else
-                {
                     aIn.format.colorToRGB(in[j], r, g, b);
-                }
 
                 out[j + aX] = aOut.format.RGBToColor(r, g, b);
             }
@@ -149,6 +153,7 @@ public:
     int _mouseKeyColor;
     bool _mouseDontScale;
     bool _mouseButtons[2];
+    bool _joypadmouseButtons[2];
 
     uint32 _threadExitTime;
 
@@ -164,6 +169,7 @@ public:
 	{
         _fsFactory = new POSIXFilesystemFactory();
         memset(_mouseButtons, 0, sizeof(_mouseButtons));
+        memset(_joypadmouseButtons, 0, sizeof(_joypadmouseButtons));
 
         if(s_systemDir.empty())
         {
@@ -184,7 +190,11 @@ public:
 	virtual void initBackend()
 	{
 	    _savefileManager = new DefaultSaveFileManager();
-        _overlay.create(640, 480, Graphics::PixelFormat(2, 5, 5, 5, 1, 10, 5, 0, 15));
+#ifdef FRONTEND_SUPPORTS_RGB565
+       _overlay.create(640, 480, Graphics::PixelFormat(2, 5, 6, 5, 0, 11, 5, 0, 0));
+#else
+       _overlay.create(640, 480, Graphics::PixelFormat(2, 5, 5, 5, 1, 10, 5, 0, 15));
+#endif
         _mixer = new Audio::MixerImpl(this, 44100);
         _timerManager = new DefaultTimerManager();
 
@@ -260,7 +270,19 @@ public:
 	virtual Common::List<Graphics::PixelFormat> getSupportedFormats() const
 	{
         Common::List<Graphics::PixelFormat> result;
+
+        /* RGBA8888 */
+        //result.push_back(Graphics::PixelFormat(4, 8, 8, 8, 8, 24, 16, 8, 0));
+
+#ifdef FRONTEND_SUPPORTS_RGB565
+        /* RGB565 - overlay */
+        result.push_back(Graphics::PixelFormat(2, 5, 6, 5, 0, 11, 5, 0, 0));
+#else
+        /* RGB555 - fmtowns */
         result.push_back(Graphics::PixelFormat(2, 5, 5, 5, 1, 10, 5, 0, 15));
+#endif
+
+        /* Palette - most games */
         result.push_back(Graphics::PixelFormat::createFormatCLUT8());
         return result;
 	}
@@ -329,9 +351,7 @@ public:
         byte *dst = (byte *)buf;
 
         for (int i = 0; i < 480; i++, dst += pitch, src += 640 * 2)
-        {
-            memcpy(dst, src, 640 * 2);
-        }
+           memcpy(dst, src, 640 * 2);
 	}
 
 	virtual void copyRectToOverlay(const void *buf, int pitch, int x, int y, int w, int h)
@@ -425,18 +445,30 @@ public:
 
 	virtual uint32 getMillis()
 	{
+#if defined(GEKKO)
+   return ticks_to_microsecs(gettime()) / 1000.0;
+#elif defined(__CELLOS_LV2__)
+   return sys_time_get_system_time() / 1000.0;
+#else
         struct timeval t;
         gettimeofday(&t, 0);
 
         return (t.tv_sec * 1000) + (t.tv_usec / 1000);
+#endif
 	}
 
 	virtual void delayMillis(uint msecs)
 	{
 		if(!retroCheckThread(msecs))
-		{
-		    usleep(1000 * msecs);
-		}
+      {
+#if defined(_WIN32)
+         Sleep(1000 * msecs);
+#elif defined(__CELLOS_LV2__)
+         sys_timer_usleep(1000 * msecs);
+#else
+         usleep(1000 * msecs);
+#endif
+      }
 	}
 
 
@@ -507,7 +539,11 @@ public:
 
         if(srcSurface.w != _screen.w || srcSurface.h != _screen.h)
         {
+#ifdef FRONTEND_SUPPORTS_RGB565
+            _screen.create(srcSurface.w, srcSurface.h, Graphics::PixelFormat(2, 5, 6, 5, 0, 11, 5, 0, 0));
+#else
             _screen.create(srcSurface.w, srcSurface.h, Graphics::PixelFormat(2, 5, 5, 5, 1, 10, 5, 0, 15));
+#endif
         }
 
         if(srcSurface.w && srcSurface.h)
@@ -533,10 +569,133 @@ public:
         return _screen;
 	}
 
+#define ANALOG_VALUE_X_ADD 8
+#define ANALOG_VALUE_Y_ADD 8
+
 	void processMouse(retro_input_state_t aCallback)
     {
-        const int16_t x = aCallback(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
-        const int16_t y = aCallback(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
+        int16_t joy_x, joy_y, x, y;
+        bool do_joystick, down;
+
+        static const uint32_t retroButtons[2] = {RETRO_DEVICE_ID_MOUSE_LEFT, RETRO_DEVICE_ID_MOUSE_RIGHT};
+        static const Common::EventType eventID[2][2] =
+        {
+            {Common::EVENT_LBUTTONDOWN, Common::EVENT_LBUTTONUP},
+            {Common::EVENT_RBUTTONDOWN, Common::EVENT_RBUTTONUP}
+        };
+
+        down = false;
+        do_joystick = false;
+        x = aCallback(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_X);
+        y = aCallback(0, RETRO_DEVICE_MOUSE, 0, RETRO_DEVICE_ID_MOUSE_Y);
+        joy_x = aCallback(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
+        joy_y = aCallback(0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
+
+        if (joy_x > 0)
+        {
+           _mouseX += ANALOG_VALUE_X_ADD;
+           _mouseX = (_mouseX < 0) ? 0 : _mouseX;
+           _mouseX = (_mouseX >= _screen.w) ? _screen.w : _mouseX;
+            do_joystick = true;
+        }
+        else if (joy_x < 0)
+        {
+           _mouseX -= ANALOG_VALUE_X_ADD;
+           _mouseX = (_mouseX < 0) ? 0 : _mouseX;
+           _mouseX = (_mouseX >= _screen.w) ? _screen.w : _mouseX;
+            do_joystick = true;
+        }
+
+        if (joy_y > 0)
+        {
+            _mouseY += ANALOG_VALUE_Y_ADD; 
+            _mouseY = (_mouseY < 0) ? 0 : _mouseY;
+            _mouseY = (_mouseY >= _screen.h) ? _screen.h : _mouseY;
+            do_joystick = true;
+        }
+        else if (joy_y < 0)
+        {
+            _mouseY -= ANALOG_VALUE_Y_ADD; 
+            _mouseY = (_mouseY < 0) ? 0 : _mouseY;
+            _mouseY = (_mouseY >= _screen.h) ? _screen.h : _mouseY;
+            do_joystick = true;
+        }
+
+        {
+           if (aCallback(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT))
+           {
+              _mouseX -= ANALOG_VALUE_X_ADD >> 1;
+              _mouseX = (_mouseX < 0) ? 0 : _mouseX;
+              _mouseX = (_mouseX >= _screen.w) ? _screen.w : _mouseX;
+              do_joystick = true;
+           }
+
+           if (aCallback(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT))
+           {
+              _mouseX += ANALOG_VALUE_X_ADD >> 1;
+              _mouseX = (_mouseX < 0) ? 0 : _mouseX;
+              _mouseX = (_mouseX >= _screen.w) ? _screen.w : _mouseX;
+              do_joystick = true;
+           }
+
+           if (aCallback(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP))
+           {
+              _mouseY -= ANALOG_VALUE_Y_ADD >> 1; 
+              _mouseY = (_mouseY < 0) ? 0 : _mouseY;
+              _mouseY = (_mouseY >= _screen.h) ? _screen.h : _mouseY;
+              do_joystick = true;
+           }
+
+           if (aCallback(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN))
+           {
+              _mouseY += ANALOG_VALUE_Y_ADD >> 1; 
+              _mouseY = (_mouseY < 0) ? 0 : _mouseY;
+              _mouseY = (_mouseY >= _screen.h) ? _screen.h : _mouseY;
+              do_joystick = true;
+           }
+        }
+
+        if (aCallback(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START))
+        {
+            Common::Event ev;
+            ev.type = Common::EVENT_MAINMENU;
+            _events.push_back(ev);
+        }
+
+        if (do_joystick)
+        {
+            Common::Event ev;
+            ev.type = Common::EVENT_MOUSEMOVE;
+            ev.mouse.x = _mouseX;
+            ev.mouse.y = _mouseY;
+            _events.push_back(ev);
+        }
+
+        down = aCallback(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B);
+
+        if(down != _joypadmouseButtons[0])
+        {
+           _joypadmouseButtons[0] = down;
+
+           Common::Event ev;
+           ev.type = eventID[0][down ? 0 : 1];
+           ev.mouse.x = _mouseX;
+           ev.mouse.y = _mouseY;
+           _events.push_back(ev);
+        }
+
+        down = aCallback(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A);
+
+        if(down != _joypadmouseButtons[0])
+        {
+           _joypadmouseButtons[1] = down;
+
+           Common::Event ev;
+           ev.type = eventID[1][down ? 0 : 1];
+           ev.mouse.x = _mouseX;
+           ev.mouse.y = _mouseY;
+           _events.push_back(ev);
+        }
 
         if(x || y)
         {
@@ -555,26 +714,21 @@ public:
             _events.push_back(ev);
         }
 
-        static const uint32_t retroButtons[2] = {RETRO_DEVICE_ID_MOUSE_LEFT, RETRO_DEVICE_ID_MOUSE_RIGHT};
-        static const Common::EventType eventID[2][2] =
-        {
-            {Common::EVENT_LBUTTONDOWN, Common::EVENT_LBUTTONUP},
-            {Common::EVENT_RBUTTONDOWN, Common::EVENT_RBUTTONUP}
-        };
 
         for(int i = 0; i != 2; i ++)
         {
-            const bool down = aCallback(0, RETRO_DEVICE_MOUSE, 0, retroButtons[i]);
+           Common::Event ev;
+            bool down = aCallback(0, RETRO_DEVICE_MOUSE, 0, retroButtons[i]);
             if(down != _mouseButtons[i])
             {
                 _mouseButtons[i] = down;
 
-                Common::Event ev;
                 ev.type = eventID[i][down ? 0 : 1];
                 ev.mouse.x = _mouseX;
                 ev.mouse.y = _mouseY;
                 _events.push_back(ev);
             }
+
         }
     }
 

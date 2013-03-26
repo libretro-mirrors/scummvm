@@ -26,6 +26,7 @@
 #include "common/scummsys.h"
 #include "common/system.h"
 #include "common/error.h"
+#include "common/rect.h"
 
 namespace Hopkins {
 
@@ -38,29 +39,36 @@ enum SaveLoadMode { MODE_SAVE = 1, MODE_LOAD = 2 };
  */
 class DialogsManager {
 private:
+	byte *_inventWin1;
+	byte *_inventBuf2;
+	byte *_inventoryIcons;
+	bool _inventDisplayedFl;
+	bool _removeInventFl;
+	int _inventX, _inventY;
+	int _inventWidth, _inventHeight;
+
 	HopkinsEngine *_vm;
 
 	void showSaveLoad(SaveLoadMode mode);
 	int  searchSavegames();
 public:
-	byte *_inventWin1;
-	byte *_inventBuf2;
-	bool _removeInventFl;
-	bool _inventDisplayedFl;
 	bool _inventFl;
-	int _inventX, _inventY;
-	int _inventWidth, _inventHeight;
-	byte *_inventoryIcons;
 
-	DialogsManager();
+	DialogsManager(HopkinsEngine *vm);
 	~DialogsManager();
-	void setParent(HopkinsEngine *vm);
 	void inventAnim();
 	void showInventory();
 	void showLoadGame();
 	void showSaveGame();
 	void showOptionsDialog();
 	void testDialogOpening();
+	void clearAll();
+
+	void drawInvent(Common::Point oldBorder, int oldBorderSpriteIndex, Common::Point newBorder, int newBorderSpriteIndex);
+	void loadIcons();
+
+	void disableInvent() { _removeInventFl = true; }
+	void enableInvent()  { _removeInventFl = false; }
 };
 
 } // End of namespace Hopkins

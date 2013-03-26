@@ -35,9 +35,10 @@ private:
 	HopkinsEngine *_vm;
 
 public:
-	Debugger();
+	Debugger(HopkinsEngine *vm);
 	virtual ~Debugger() {}
-	void setParent(HopkinsEngine *vm);
+
+	bool cmd_DirtyRects(int argc, const char **argv);
 };
 
 } // End of namespace Hopkins

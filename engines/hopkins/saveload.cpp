@@ -38,7 +38,7 @@ namespace Hopkins {
 const char *SAVEGAME_STR = "HOPKINS";
 #define SAVEGAME_STR_SIZE 13
 
-void SaveLoadManager::setParent(HopkinsEngine *vm) {
+SaveLoadManager::SaveLoadManager(HopkinsEngine *vm) {
 	_vm = vm;
 }
 
@@ -136,20 +136,20 @@ void SaveLoadManager::writeSavegameHeader(Common::OutSaveFile *out, hopkinsSaveg
 	out->writeSint16LE(td.tm_mday);
 	out->writeSint16LE(td.tm_hour);
 	out->writeSint16LE(td.tm_min);
-	out->writeUint32LE(_vm->_eventsManager._gameCounter);
+	out->writeUint32LE(_vm->_eventsManager->_gameCounter);
 }
 
 Common::Error SaveLoadManager::saveGame(int slot, const Common::String &saveName) {
 	/* Pack any necessary data into the savegame data structure */
 	// Set the selected slot number
-	_vm->_globals._saveData->_data[svLastSavegameSlot] = slot;
+	_vm->_globals->_saveData->_data[svLastSavegameSlot] = slot;
 
 	// Set up the inventory
 	for (int i = 0; i < 35; ++i)
-		_vm->_globals._saveData->_inventory[i] = _vm->_globals._inventory[i];
+		_vm->_globals->_saveData->_inventory[i] = _vm->_globals->_inventory[i];
 
-	_vm->_globals._saveData->_mapCarPosX = _vm->_objectsManager._mapCarPosX;
-	_vm->_globals._saveData->_mapCarPosY = _vm->_objectsManager._mapCarPosY;
+	_vm->_globals->_saveData->_mapCarPosX = _vm->_objectsManager->_mapCarPosX;
+	_vm->_globals->_saveData->_mapCarPosY = _vm->_objectsManager->_mapCarPosY;
 
 	/* Create the savegame */
 	Common::OutSaveFile *savefile = g_system->getSavefileManager()->openForSaving(_vm->generateSaveName(slot));
@@ -200,15 +200,15 @@ Common::Error SaveLoadManager::loadGame(int slot) {
 
 	// Unpack the inventory
 	for (int i = 0; i < 35; ++i)
-		_vm->_globals._inventory[i] = _vm->_globals._saveData->_inventory[i];
+		_vm->_globals->_inventory[i] = _vm->_globals->_saveData->_inventory[i];
 
 	// Set variables from loaded data as necessary
-	_vm->_globals._saveData->_data[svLastSavegameSlot] = slot;
-	_vm->_globals._exitId = _vm->_globals._saveData->_data[svLastScreenId];
-	_vm->_globals._saveData->_data[svLastPrevScreenId] = 0;
-	_vm->_globals._screenId = 0;
-	_vm->_objectsManager._mapCarPosX = _vm->_globals._saveData->_mapCarPosX;
-	_vm->_objectsManager._mapCarPosY = _vm->_globals._saveData->_mapCarPosY;
+	_vm->_globals->_saveData->_data[svLastSavegameSlot] = slot;
+	_vm->_globals->_exitId = _vm->_globals->_saveData->_data[svLastScreenId];
+	_vm->_globals->_saveData->_data[svLastPrevScreenId] = 0;
+	_vm->_globals->_screenId = 0;
+	_vm->_objectsManager->_mapCarPosX = _vm->_globals->_saveData->_mapCarPosX;
+	_vm->_objectsManager->_mapCarPosY = _vm->_globals->_saveData->_mapCarPosY;
 
 	return Common::kNoError;
 }
@@ -228,14 +228,14 @@ bool SaveLoadManager::readSavegameHeader(int slot, hopkinsSavegameHeader &header
 #define REDUCE_AMOUNT 80
 
 void SaveLoadManager::createThumbnail(Graphics::Surface *s) {
-	int w = _vm->_graphicsManager.zoomOut(SCREEN_WIDTH, REDUCE_AMOUNT);
-	int h = _vm->_graphicsManager.zoomOut(SCREEN_HEIGHT - 40, REDUCE_AMOUNT);
+	int w = _vm->_graphicsManager->zoomOut(SCREEN_WIDTH, REDUCE_AMOUNT);
+	int h = _vm->_graphicsManager->zoomOut(SCREEN_HEIGHT - 40, REDUCE_AMOUNT);
 
 	Graphics::Surface thumb8;
 	thumb8.create(w, h, Graphics::PixelFormat::createFormatCLUT8());
 
-	_vm->_graphicsManager.reduceScreenPart(_vm->_graphicsManager._vesaBuffer, (byte *)thumb8.pixels,
-		_vm->_eventsManager._startPos.x, 20, SCREEN_WIDTH, SCREEN_HEIGHT - 40, 80);
+	_vm->_graphicsManager->reduceScreenPart(_vm->_graphicsManager->_vesaBuffer, (byte *)thumb8.pixels,
+		_vm->_eventsManager->_startPos.x, 20, SCREEN_WIDTH, SCREEN_HEIGHT - 40, 80);
 
 	// Convert the 8-bit pixel to 16 bit surface
 	s->create(w, h, Graphics::PixelFormat(2, 5, 6, 5, 0, 11, 5, 0, 0));
@@ -249,7 +249,7 @@ void SaveLoadManager::createThumbnail(Graphics::Surface *s) {
 		uint16 *lineDestP = destP;
 
 		for (int xp = 0; xp < w; ++xp)
-			*lineDestP++ = *(uint16 *)&_vm->_graphicsManager.PAL_PIXELS[*lineSrcP++ * 2];
+			*lineDestP++ = *(uint16 *)&_vm->_graphicsManager->PAL_PIXELS[*lineSrcP++ * 2];
 
 		// Move to the start of the next line
 		srcP += w;
@@ -259,19 +259,19 @@ void SaveLoadManager::createThumbnail(Graphics::Surface *s) {
 }
 
 void SaveLoadManager::syncSavegameData(Common::Serializer &s, int version) {
-	s.syncBytes(&_vm->_globals._saveData->_data[0], 2050);
-	syncCharacterLocation(s, _vm->_globals._saveData->_cloneHopkins);
-	syncCharacterLocation(s, _vm->_globals._saveData->_realHopkins);
-	syncCharacterLocation(s, _vm->_globals._saveData->_samantha);
+	s.syncBytes(&_vm->_globals->_saveData->_data[0], 2050);
+	syncCharacterLocation(s, _vm->_globals->_saveData->_cloneHopkins);
+	syncCharacterLocation(s, _vm->_globals->_saveData->_realHopkins);
+	syncCharacterLocation(s, _vm->_globals->_saveData->_samantha);
 
 	for (int i = 0; i < 35; ++i)
-		s.syncAsSint16LE(_vm->_globals._saveData->_inventory[i]);
+		s.syncAsSint16LE(_vm->_globals->_saveData->_inventory[i]);
 
 	if (version > 1) {
-		s.syncAsSint16LE(_vm->_globals._saveData->_mapCarPosX);
-		s.syncAsSint16LE(_vm->_globals._saveData->_mapCarPosY);
+		s.syncAsSint16LE(_vm->_globals->_saveData->_mapCarPosX);
+		s.syncAsSint16LE(_vm->_globals->_saveData->_mapCarPosY);
 	} else {
-		_vm->_globals._saveData->_mapCarPosX = _vm->_globals._saveData->_mapCarPosY = 0;
+		_vm->_globals->_saveData->_mapCarPosX = _vm->_globals->_saveData->_mapCarPosY = 0;
 	}
 
 }
@@ -292,7 +292,7 @@ void SaveLoadManager::convertThumb16To8(Graphics::Surface *thumb16, Graphics::Su
 	byte paletteG[PALETTE_SIZE];
 	byte paletteB[PALETTE_SIZE];
 	for (int palIndex = 0; palIndex < PALETTE_SIZE; ++palIndex) {
-		uint16 p = READ_LE_UINT16(&_vm->_graphicsManager.PAL_PIXELS[palIndex * 2]);
+		uint16 p = READ_LE_UINT16(&_vm->_graphicsManager->PAL_PIXELS[palIndex * 2]);
 		pixelFormat16.colorToRGB(p, paletteR[palIndex], paletteG[palIndex], paletteB[palIndex]);
 	}
 

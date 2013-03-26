@@ -124,7 +124,7 @@ private:
 	void setSubmarineSprites();
 	void handleOceanMaze(int16 curExitId, Common::String backgroundFilename, Directions defaultDirection, int16 exit1, int16 exit2, int16 exit3, int16 exit4, int16 soundId);
 	void loadCredits();
-	void displayCredits(int startPosY, byte *buffer, char colour);
+	void displayCredits(int startPosY, byte *buffer, char color);
 	void displayCredits();
 	void handleNotAvailable(int sortie);
 
@@ -142,22 +142,22 @@ protected:
 	virtual bool hasFeature(EngineFeature f) const;
 
 public:
-	Debugger _debugger;
-	AnimationManager _animationManager;
-	ComputerManager _computerManager;
-	DialogsManager _dialogsManager;
-	EventsManager _eventsManager;
-	FontManager _fontManager;
-	Globals _globals;
-	FileManager _fileManager;
-	GraphicsManager _graphicsManager;
-	LinesManager _linesManager;
-	MenuManager _menuManager;
-	ObjectsManager _objectsManager;
-	SaveLoadManager _saveLoadManager;
-	ScriptManager _scriptManager;
-	SoundManager _soundManager;
-	TalkManager _talkManager;
+	AnimationManager *_animationManager;
+	ComputerManager *_computerManager;
+	DialogsManager *_dialogsManager;
+	Debugger *_debugger;
+	EventsManager *_eventsManager;
+	FileManager *_fileManager;
+	FontManager *_fontManager;
+	Globals *_globals;
+	GraphicsManager *_graphicsManager;
+	LinesManager *_linesManager;
+	MenuManager *_menuManager;
+	ObjectsManager *_objectsManager;
+	SaveLoadManager *_saveLoadManager;
+	ScriptManager *_scriptManager;
+	SoundManager *_soundManager;
+	TalkManager *_talkManager;
 
 public:
 	HopkinsEngine(OSystem *syst, const HopkinsGameDescription *gameDesc);
@@ -184,15 +184,13 @@ public:
 	void playIntro();
 
 	/**
-	 * Synchronises the sound settings from ScummVM into the engine
+	 * Synchronizes the sound settings from ScummVM into the engine
 	 */
 	virtual void syncSoundSettings();
 };
 
 // Global reference to the HopkinsEngine object
 extern HopkinsEngine *g_vm;
-
-#define GLOBALS g_vm->_globals
 
 } // End of namespace Hopkins
 

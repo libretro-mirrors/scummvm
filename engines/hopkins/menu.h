@@ -36,7 +36,7 @@ private:
 	HopkinsEngine *_vm;
 
 public:
-	void setParent(HopkinsEngine *vm);
+	MenuManager(HopkinsEngine *vm);
 
 	int menu();
 };

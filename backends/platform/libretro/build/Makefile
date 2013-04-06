@@ -34,7 +34,8 @@ else ifeq ($(platform), qnx)
    CC = qcc -Vgcc_ntoarmv7le
    CXX = QCC -Vgcc_ntoarmv7le
    LD = QCC -Vgcc_ntoarmv7le
-   AR = qcc -Vgcc_ntoarmv7le
+   AR = qcc -Vgcc_ntoarmv7le -A
+   RANLIB="${QNX_HOST}/usr/bin/ntoarmv7-ranlib"
 else ifeq ($(platform), android)
    TARGET  := libretro_scummvm.so
    DEFINES += -fPIC -Wno-multichar
@@ -61,9 +62,11 @@ ifdef TOOLSET
     AR        = $(TOOLSET)ar cru
     RANLIB    = $(TOOLSET)ranlib
 else
+ifneq ($(platform), qnx)
     LD        = $(CXX)
     AR        = ar cru
     RANLIB    = ranlib
+endif
 endif
 
 MKDIR         = mkdir -p

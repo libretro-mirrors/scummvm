@@ -197,6 +197,8 @@ bool POSIXFilesystemNode::create(bool isDir) {
 namespace Posix {
 
 bool assureDirectoryExists(const Common::String &dir, const char *prefix) {
+	struct stat sb;
+
 	// Check whether the prefix exists if one is supplied.
 	if (prefix)
    {

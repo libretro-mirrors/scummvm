@@ -99,7 +99,7 @@ void retro_get_system_info(struct retro_system_info *info)
 #define GIT_VERSION ""
 #endif
    info->library_version = "1.9.0" GIT_VERSION;
-   info->valid_extensions = "exe|scum|scummvm";
+   info->valid_extensions = "scummvm";
    info->need_fullpath = true;
    info->block_extract = false;
 }

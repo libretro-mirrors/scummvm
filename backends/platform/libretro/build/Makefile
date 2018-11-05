@@ -336,7 +336,7 @@ $(TARGET): $(OBJS) libdeps.a
 	$(AR) $@ $(wildcard *.o) $(wildcard */*.o) $(wildcard */*/*.o) $(wildcard */*/*/*.o) $(wildcard */*/*/*/*.o)  $(wildcard */*/*/*/*/*.o)
 else
 $(TARGET): $(OBJS) libdeps.a 
-    @echo "** BUILDING $(TARGET) FOR PLATFORM $(platform) **"
+	@echo "** BUILDING $(TARGET) FOR PLATFORM $(platform) **"
 	$(CXX) $(LDFLAGS) $+ $(LIBS) -o $@
 	@echo "** BUILD SUCCESSFUL! GG NO RE **"
 endif

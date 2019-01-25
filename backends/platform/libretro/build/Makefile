@@ -401,7 +401,7 @@ else
 	LD = link.exe
 endif
 else
-	LD = $(CC)
+	LD = $(CXX)
 endif
 
 ifeq ($(platform), wiiu)

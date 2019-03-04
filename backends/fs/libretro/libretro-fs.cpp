@@ -20,8 +20,6 @@
  *
  */
 
-#if defined(POSIX) || defined(PLAYSTATION3) || defined(PSP2)
-
 // Re-enable some forbidden symbols to avoid clashes with stat.h and unistd.h.
 // Also with clock() in sys/time.h in some Mac OS X SDKs.
 #define FORBIDDEN_SYMBOL_EXCEPTION_time_h
@@ -30,36 +28,25 @@
 #define FORBIDDEN_SYMBOL_EXCEPTION_getenv
 #define FORBIDDEN_SYMBOL_EXCEPTION_exit		//Needed for IRIX's unistd.h
 
-#include "backends/fs/posix/posix-fs.h"
+#include "backends/fs/libretro/libretro-fs.h"
 #include "backends/fs/stdiostream.h"
 #include "common/algorithm.h"
 
-#include <sys/param.h>
-#include <sys/stat.h>
-#ifdef PSP2
-#include "backends/fs/psp2/psp2-dirent.h"
-#define mkdir sceIoMkdir
-#else
-#include <dirent.h>
-#endif
+#include "../../platform/libretro/libretro-common/include/retro_dirent.h"
+#include "../../platform/libretro/libretro-common/include/retro_stat.h"
+#include "../../platform/libretro/libretro-common/include/file/file_path.h"
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
 
-#ifdef __OS2__
-#define INCL_DOS
-#include <os2.h>
-#endif
+void LibRetroFilesystemNode::setFlags() {
+	const char *fspath = _path.c_str();
 
-
-void POSIXFilesystemNode::setFlags() {
-	struct stat st;
-
-	_isValid = (0 == stat(_path.c_str(), &st));
-	_isDirectory = _isValid ? S_ISDIR(st.st_mode) : false;
+	_isValid     = path_is_valid(fspath);
+	_isDirectory = path_is_directory(fspath);
 }
 
-POSIXFilesystemNode::POSIXFilesystemNode(const Common::String &p) {
+LibRetroFilesystemNode::LibRetroFilesystemNode(const Common::String &p) {
 	assert(p.size() > 0);
 
 	// Expand "~/" to the value of the HOME env variable
@@ -75,37 +62,14 @@ POSIXFilesystemNode::POSIXFilesystemNode(const Common::String &p) {
 		_path = p;
 	}
 
-#ifdef __OS2__
-	// On OS/2, 'X:/' is a root of drive X, so we should not remove that last
-	// slash.
-	if (!(_path.size() == 3 && _path.hasSuffix(":/")))
-#endif
 	// Normalize the path (that is, remove unneeded slashes etc.)
 	_path = Common::normalizePath(_path, '/');
 	_displayName = Common::lastPathComponent(_path, '/');
 
-	// TODO: should we turn relative paths into absolute ones?
-	// Pro: Ensures the "getParent" works correctly even for relative dirs.
-	// Contra: The user may wish to use (and keep!) relative paths in his
-	//   config file, and converting relative to absolute paths may hurt him...
-	//
-	// An alternative approach would be to change getParent() to work correctly
-	// if "_path" is the empty string.
-#if 0
-	if (!_path.hasPrefix("/")) {
-		char buf[MAXPATHLEN+1];
-		getcwd(buf, MAXPATHLEN);
-		strcat(buf, "/");
-		_path = buf + _path;
-	}
-#endif
-	// TODO: Should we enforce that the path is absolute at this point?
-	//assert(_path.hasPrefix("/"));
-
 	setFlags();
 }
 
-AbstractFSNode *POSIXFilesystemNode::getChild(const Common::String &n) const {
+AbstractFSNode *LibRetroFilesystemNode::getChild(const Common::String &n) const {
 	assert(!_path.empty());
 	assert(_isDirectory);
 
@@ -122,87 +86,36 @@ AbstractFSNode *POSIXFilesystemNode::getChild(const Common::String &n) const {
 	return makeNode(newPath);
 }
 
-bool POSIXFilesystemNode::getChildren(AbstractFSList &myList, ListMode mode, bool hidden) const {
+bool LibRetroFilesystemNode::getChildren(AbstractFSList &myList, ListMode mode, bool hidden) const {
 	assert(_isDirectory);
 
-#ifdef __OS2__
-	if (_path == "/") {
-		// Special case for the root dir: List all DOS drives
-		ULONG ulDrvNum;
-		ULONG ulDrvMap;
-
-		DosQueryCurrentDisk(&ulDrvNum, &ulDrvMap);
-
-		for (int i = 0; i < 26; i++) {
-			if (ulDrvMap & 1) {
-				char drive_root[] = "A:/";
-				drive_root[0] += i;
-
-                POSIXFilesystemNode *entry = new POSIXFilesystemNode();
-				entry->_isDirectory = true;
-				entry->_isValid = true;
-				entry->_path = drive_root;
-				entry->_displayName = "[" + Common::String(drive_root, 2) + "]";
-				myList.push_back(entry);
-			}
-
-			ulDrvMap >>= 1;
-		}
-
-		return true;
-	}
-#endif
-
-	DIR *dirp = opendir(_path.c_str());
-	struct dirent *dp;
+	struct RDIR *dirp = retro_opendir(_path.c_str());
 
 	if (dirp == NULL)
 		return false;
 
 	// loop over dir entries using readdir
-	while ((dp = readdir(dirp)) != NULL) {
+	while ((retro_readdir(dirp))) {
+		const char *d_name = retro_dirent_get_name(dirp);
+
 		// Skip 'invisible' files if necessary
-		if (dp->d_name[0] == '.' && !hidden) {
+		if (d_name[0] == '.' && !hidden) {
 			continue;
 		}
 		// Skip '.' and '..' to avoid cycles
-		if ((dp->d_name[0] == '.' && dp->d_name[1] == 0) || (dp->d_name[0] == '.' && dp->d_name[1] == '.')) {
+		if ((d_name[0] == '.' && d_name[1] == 0) || (d_name[0] == '.' && d_name[1] == '.')) {
 			continue;
 		}
 
 		// Start with a clone of this node, with the correct path set
-		POSIXFilesystemNode entry(*this);
-		entry._displayName = dp->d_name;
+		LibRetroFilesystemNode entry(*this);
+		entry._displayName = d_name;
 		if (_path.lastChar() != '/')
 			entry._path += '/';
 		entry._path += entry._displayName;
 
-#if defined(SYSTEM_NOT_SUPPORTING_D_TYPE)
-		/* TODO: d_type is not part of POSIX, so it might not be supported
-		 * on some of our targets. For those systems where it isn't supported,
-		 * add this #elif case, which tries to use stat() instead.
-		 *
-		 * The d_type method is used to avoid costly recurrent stat() calls in big
-		 * directories.
-		 */
-		entry.setFlags();
-#else
-		if (dp->d_type == DT_UNKNOWN) {
-			// Fall back to stat()
-			entry.setFlags();
-		} else {
-			entry._isValid = (dp->d_type == DT_DIR) || (dp->d_type == DT_REG) || (dp->d_type == DT_LNK);
-			if (dp->d_type == DT_LNK) {
-				struct stat st;
-				if (stat(entry._path.c_str(), &st) == 0)
-					entry._isDirectory = S_ISDIR(st.st_mode);
-				else
-					entry._isDirectory = false;
-			} else {
-				entry._isDirectory = (dp->d_type == DT_DIR);
-			}
-		}
-#endif
+		entry._isValid     = true;
+		entry._isDirectory = retro_dirent_is_dir(dirp, entry._path.c_str());
 
 		// Skip files that are invalid for some reason (e.g. because we couldn't
 		// properly stat them).
@@ -211,25 +124,19 @@ bool POSIXFilesystemNode::getChildren(AbstractFSList &myList, ListMode mode, boo
 
 		// Honor the chosen mode
 		if ((mode == Common::FSNode::kListFilesOnly && entry._isDirectory) ||
-			(mode == Common::FSNode::kListDirectoriesOnly && !entry._isDirectory))
+		    (mode == Common::FSNode::kListDirectoriesOnly && !entry._isDirectory))
 			continue;
 
-		myList.push_back(new POSIXFilesystemNode(entry));
+		myList.push_back(new LibRetroFilesystemNode(entry));
 	}
-	closedir(dirp);
+	retro_closedir(dirp);
 
 	return true;
 }
 
-AbstractFSNode *POSIXFilesystemNode::getParent() const {
+AbstractFSNode *LibRetroFilesystemNode::getParent() const {
 	if (_path == "/")
 		return 0;	// The filesystem root has no parent
-
-#ifdef __OS2__
-    if (_path.size() == 3 && _path.hasSuffix(":/"))
-        // This is a root directory of a drive
-        return makeNode("/");   // return a virtual root for a list of drives
-#endif
 
 	const char *start = _path.c_str();
 	const char *end = start + _path.size();
@@ -240,29 +147,25 @@ AbstractFSNode *POSIXFilesystemNode::getParent() const {
 		end--;
 
 	if (end == start) {
-		// This only happens if we were called with a relative path, for which
-		// there simply is no parent.
-		// TODO: We could also resolve this by assuming that the parent is the
-		//       current working directory, and returning a node referring to that.
 		return 0;
 	}
 
 	return makeNode(Common::String(start, end));
 }
 
-Common::SeekableReadStream *POSIXFilesystemNode::createReadStream() {
+Common::SeekableReadStream *LibRetroFilesystemNode::createReadStream() {
 	return StdioStream::makeFromPath(getPath(), false);
 }
 
-Common::WriteStream *POSIXFilesystemNode::createWriteStream() {
+Common::WriteStream *LibRetroFilesystemNode::createWriteStream() {
 	return StdioStream::makeFromPath(getPath(), true);
 }
 
-bool POSIXFilesystemNode::create(bool isDirectoryFlag) {
+bool LibRetroFilesystemNode::create(bool isDirectoryFlag) {
 	bool success;
 
 	if (isDirectoryFlag) {
-		success = mkdir(_path.c_str(), 0755) == 0;
+		success = mkdir_norecurse(_path.c_str());
 	} else {
 		int fd = open(_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0755);
 		success = fd >= 0;
@@ -279,7 +182,7 @@ bool POSIXFilesystemNode::create(bool isDirectoryFlag) {
 			return _isDirectory == isDirectoryFlag;
 		}
 
-		warning("POSIXFilesystemNode: %s() was a success, but stat indicates there is no such %s",
+		warning("LibRetroFilesystemNode: %s() was a success, but stat indicates there is no such %s",
 			isDirectoryFlag ? "mkdir" : "creat", isDirectoryFlag ? "directory" : "file");
 		return false;
 	}
@@ -290,13 +193,11 @@ bool POSIXFilesystemNode::create(bool isDirectoryFlag) {
 namespace Posix {
 
 bool assureDirectoryExists(const Common::String &dir, const char *prefix) {
-	struct stat sb;
-
 	// Check whether the prefix exists if one is supplied.
 	if (prefix) {
-		if (stat(prefix, &sb) != 0) {
+		if (!path_is_valid(prefix)) {
 			return false;
-		} else if (!S_ISDIR(sb.st_mode)) {
+		} else if (!path_is_directory(prefix)) {
 			return false;
 		}
 	}
@@ -330,11 +231,11 @@ bool assureDirectoryExists(const Common::String &dir, const char *prefix) {
 			*cur = '\0';
 		}
 
-		if (mkdir(path.c_str(), 0755) != 0) {
+		if (!mkdir_norecurse(path.c_str())) {
 			if (errno == EEXIST) {
-				if (stat(path.c_str(), &sb) != 0) {
+				if (!path_is_valid(path.c_str())) {
 					return false;
-				} else if (!S_ISDIR(sb.st_mode)) {
+				} else if (!path_is_directory(path.c_str())) {
 					return false;
 				}
 			} else {
@@ -349,5 +250,3 @@ bool assureDirectoryExists(const Common::String &dir, const char *prefix) {
 }
 
 } // End of namespace Posix
-
-#endif //#if defined(POSIX)

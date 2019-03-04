@@ -7,12 +7,18 @@
 #include "os.h"
 #include <libco.h>
 #include "libretro.h"
+#ifdef _WIN32
+#include <direct.h>
+#else
 #include <unistd.h>
+#endif
+#ifndef _MSC_VER
 /**
  * Include libgen.h for basename() and dirname().
  * @see http://linux.die.net/man/3/basename
  */
 #include <libgen.h>
+#endif
 #include <string.h>
 
 /**
@@ -43,6 +49,8 @@ static int analog_deadzone = (int)(0.15f * ANALOG_RANGE);
 static float gampad_cursor_speed = 1.0f;
 static bool analog_response_is_cubic = false;
 
+static float mouse_speed = 1.0f;
+
 static bool speed_hack_is_enabled = false;
 
 void retro_set_environment(retro_environment_t cb)
@@ -51,6 +59,7 @@ void retro_set_environment(retro_environment_t cb)
 		{ "scummvm_gamepad_cursor_speed", "Gamepad Cursor Speed; 1.0|1.5|2.0|2.5|3.0|0.25|0.5|0.75" },
 		{ "scummvm_analog_response", "Analog Cursor Response; linear|cubic" },
 		{ "scummvm_analog_deadzone", "Analog Deadzone (percent); 15|20|25|30|0|5|10" },
+      { "scummvm_mouse_speed", "Mouse Speed; 1.0|1.25|1.5|1.75|2.0|2.5|3.0|0.05|0.1|0.15|0.2|0.25|0.3|0.35|0.4|0.45|0.5|0.6|0.7|0.8|0.9" },
 		{ "scummvm_speed_hack", "Speed Hack (Restart); disabled|enabled" },
 		{ NULL, NULL },
 	};
@@ -185,7 +194,7 @@ void parse_command_params(char* cmdline)
    }
 }
 
-#if defined(WIIU) || defined(__SWITCH__)
+#if defined(WIIU) || defined(__SWITCH__) || defined(_MSC_VER)
 #include <stdio.h>
 #include <string.h>
 char * dirname (char *path)
@@ -236,7 +245,15 @@ static void update_variables(void)
 	{
 		analog_deadzone = (int)(atoi(var.value) * 0.01f * ANALOG_RANGE);
 	}
-	
+
+   var.key = "scummvm_mouse_speed";
+   var.value = NULL;
+   mouse_speed = 1.0f;
+   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
+   {
+      mouse_speed = (float)atof(var.value);
+   }
+
 	var.key = "scummvm_speed_hack";
 	var.value = NULL;
 	speed_hack_is_enabled = false;
@@ -410,7 +427,7 @@ void retro_run (void)
    if(g_system)
    {
       poll_cb();
-      retroProcessMouse(input_cb, retro_device, gampad_cursor_speed, analog_response_is_cubic, analog_deadzone);
+      retroProcessMouse(input_cb, retro_device, gampad_cursor_speed, analog_response_is_cubic, analog_deadzone, mouse_speed);
    }
 
    /* Run emu */

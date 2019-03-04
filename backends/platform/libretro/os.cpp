@@ -38,8 +38,8 @@
 #include "backends/fs/windows/windows-fs-factory.h"
 #define FS_SYSTEM_FACTORY WindowsFilesystemFactory
 #else
-#include "backends/fs/posix/posix-fs-factory.h"
-#define FS_SYSTEM_FACTORY POSIXFilesystemFactory
+#include "backends/fs/libretro/libretro-fs-factory.h"
+#define FS_SYSTEM_FACTORY LibRetroFilesystemFactory
 #endif
 
 #include "backends/timer/default/default-timer.h"
@@ -801,12 +801,12 @@ class OSystem_RETRO : public EventsBaseBackend, public PaletteManager {
 #define BASE_CURSOR_SPEED 4
 #define PI 3.141592653589793238
 
-      void processMouse(retro_input_state_t aCallback, int device, float gampad_cursor_speed, bool analog_response_is_cubic, int analog_deadzone)
+      void processMouse(retro_input_state_t aCallback, int device, float gampad_cursor_speed, bool analog_response_is_cubic, int analog_deadzone, float mouse_speed)
       {
          int16_t joy_x, joy_y, joy_rx, joy_ry, x, y;
          float analog_amplitude_x, analog_amplitude_y;
          int mouse_acc_int;
-         bool do_joystick, down;
+         bool do_joystick, do_mouse, down;
          float adjusted_cursor_speed = (float)BASE_CURSOR_SPEED * gampad_cursor_speed;
          int dpad_cursor_offset;
          double rs_radius, rs_angle;
@@ -1145,24 +1145,70 @@ class OSystem_RETRO : public EventsBaseBackend, public PaletteManager {
 				_joypadnumpadActive = false;
 				_joypadnumpadLast = 8;
 			}
-
-         if(x || y)
+         
+         // Process input from physical mouse
+         do_mouse = false;
+         // > X Axis
+         if (x != 0)
          {
-            _mouseX += x;
-            _mouseX = (_mouseX < 0) ? 0 : _mouseX;
-            _mouseX = (_mouseX >= _screen.w) ? _screen.w : _mouseX;
+            if (x > 0) {
+               // Reset accumulator when changing direction
+               _mouseXAcc = (_mouseXAcc < 0.0) ? 0.0 : _mouseXAcc;
+            }
+            if (x < 0) {
+               // Reset accumulator when changing direction
+               _mouseXAcc = (_mouseXAcc > 0.0) ? 0.0 : _mouseXAcc;
+            }
+            // Update accumulator
+            _mouseXAcc += (float)x * mouse_speed;
+            // Get integer part of accumulator
+            mouse_acc_int = (int)_mouseXAcc;
+            if (mouse_acc_int != 0)
+            {
+               // Set mouse position
+               _mouseX += mouse_acc_int;
+               _mouseX = (_mouseX < 0) ? 0 : _mouseX;
+               _mouseX = (_mouseX >= _screen.w) ? _screen.w : _mouseX;
+               do_mouse = true;
+               // Update accumulator
+               _mouseXAcc -= (float)mouse_acc_int;
+            }
+         }
+         // > Y Axis
+         if (y != 0)
+         {
+            if (y > 0) {
+               // Reset accumulator when changing direction
+               _mouseYAcc = (_mouseYAcc < 0.0) ? 0.0 : _mouseYAcc;
+            }
+            if (y < 0) {
+               // Reset accumulator when changing direction
+               _mouseYAcc = (_mouseYAcc > 0.0) ? 0.0 : _mouseYAcc;
+            }
+            // Update accumulator
+            _mouseYAcc += (float)y * mouse_speed;
+            // Get integer part of accumulator
+            mouse_acc_int = (int)_mouseYAcc;
+            if (mouse_acc_int != 0)
+            {
+               // Set mouse position
+               _mouseY += mouse_acc_int;
+               _mouseY = (_mouseY < 0) ? 0 : _mouseY;
+               _mouseY = (_mouseY >= _screen.h) ? _screen.h : _mouseY;
+               do_mouse = true;
+               // Update accumulator
+               _mouseYAcc -= (float)mouse_acc_int;
+            }
+         }
 
-            _mouseY += y;
-            _mouseY = (_mouseY < 0) ? 0 : _mouseY;
-            _mouseY = (_mouseY >= _screen.h) ? _screen.h : _mouseY;
-
+         if (do_mouse)
+         {
             Common::Event ev;
             ev.type = Common::EVENT_MOUSEMOVE;
             ev.mouse.x = _mouseX;
             ev.mouse.y = _mouseY;
             _events.push_back(ev);
          }
-
 
          for(int i = 0; i < 2; i ++)
          {
@@ -1212,7 +1258,7 @@ class OSystem_RETRO : public EventsBaseBackend, public PaletteManager {
       {
          Common::Event ev;
          ev.type = Common::EVENT_QUIT;
-         _events.push_back(ev);
+         ((OSystem_RETRO*)g_system)->getEventManager()->pushEvent(ev);
       }
 };
 
@@ -1226,9 +1272,9 @@ const Graphics::Surface& getScreen()
    return ((OSystem_RETRO*)g_system)->getScreen();
 }
 
-void retroProcessMouse(retro_input_state_t aCallback, int device, float gampad_cursor_speed, bool analog_response_is_cubic, int analog_deadzone)
+void retroProcessMouse(retro_input_state_t aCallback, int device, float gampad_cursor_speed, bool analog_response_is_cubic, int analog_deadzone, float mouse_speed)
 {
-   ((OSystem_RETRO*)g_system)->processMouse(aCallback, device, gampad_cursor_speed, analog_response_is_cubic, analog_deadzone);
+   ((OSystem_RETRO*)g_system)->processMouse(aCallback, device, gampad_cursor_speed, analog_response_is_cubic, analog_deadzone, mouse_speed);
 }
 
 void retroPostQuit()

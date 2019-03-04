@@ -253,6 +253,12 @@ MODULE_OBJS += \
 	graphics/gph/gph-graphics.o
 endif
 
+ifeq ($(BACKEND),libretro)
+MODULE_OBJS += \
+	fs/libretro/libretro-fs.o \
+	fs/libretro/libretro-fs-factory.o
+endif
+
 ifeq ($(BACKEND),linuxmoto)
 MODULE_OBJS += \
 	events/linuxmotosdl/linuxmotosdl-events.o \

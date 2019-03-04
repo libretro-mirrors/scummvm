@@ -20,7 +20,7 @@
  *
  */
 
-#if defined(POSIX) || defined(PLAYSTATION3)
+#ifdef __LIBRETRO__
 
 // Re-enable some forbidden symbols to avoid clashes with stat.h and unistd.h.
 // Also with clock() in sys/time.h in some Mac OS X SDKs.
@@ -28,21 +28,45 @@
 #define FORBIDDEN_SYMBOL_EXCEPTION_unistd_h
 #define FORBIDDEN_SYMBOL_EXCEPTION_mkdir
 #define FORBIDDEN_SYMBOL_EXCEPTION_exit		//Needed for IRIX's unistd.h
+#ifdef PLAYSTATION3
+#include <string.h>
+#include <stdlib.h>
+#define FORBIDDEN_SYMBOL_ALLOW_ALL
 
-#include "backends/fs/posix/posix-fs-factory.h"
-#include "backends/fs/posix/posix-fs.h"
+extern char *getwd(char *);
+extern int errno;
 
-AbstractFSNode *POSIXFilesystemFactory::makeRootFileNode() const {
-	return new POSIXFilesystemNode("/");
+#ifndef PATH_MAX
+#define PATH_MAX   1024
+#endif
+
+#define ERANGE          34               // Result too large
+#define ENOMEM          12               // Cannot allocate memory
+
+static inline char *getcwd (char *buf, size_t len)
+{
+   return 0;
+}
+#endif
+
+#include "backends/fs/libretro/libretro-fs-factory.h"
+#include "backends/fs/libretro/libretro-fs.h"
+
+AbstractFSNode *LibRetroFilesystemFactory::makeRootFileNode() const {
+	return new LibRetroFilesystemNode("/");
 }
 
-AbstractFSNode *POSIXFilesystemFactory::makeCurrentDirectoryFileNode() const {
+AbstractFSNode *LibRetroFilesystemFactory::makeCurrentDirectoryFileNode() const {
+#ifdef PLAYSTATION3
+	return new LibRetroFilesystemNode("/");
+#else
 	char buf[MAXPATHLEN];
-	return getcwd(buf, MAXPATHLEN) ? new POSIXFilesystemNode(buf) : NULL;
+	return getcwd(buf, MAXPATHLEN) ? new LibRetroFilesystemNode(buf) : NULL;
+#endif
 }
 
-AbstractFSNode *POSIXFilesystemFactory::makeFileNodePath(const Common::String &path) const {
+AbstractFSNode *LibRetroFilesystemFactory::makeFileNodePath(const Common::String &path) const {
 	assert(!path.empty());
-	return new POSIXFilesystemNode(path);
+	return new LibRetroFilesystemNode(path);
 }
 #endif

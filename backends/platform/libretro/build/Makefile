@@ -176,14 +176,14 @@ else ifeq ($(platform), android-armv7)
    USE_THEORADEC = 0
    USE_TREMOR = 1
    HAVE_MT32EMU = 0
-#else ifeq (,$(findstring armv,$(platform)))
-#   TARGET := $(TARGET_NAME)_libretro.so
-#   DEFINES += -fPIC -Wno-multichar -D_ARM_ASSEM_
-#   LDFLAGS += -shared -Wl,--version-script=../link.T -fPIC
-#   USE_VORBIS = 0
-#   USE_THEORADEC = 0
-#   USE_TREMOR = 0
-#   HAVE_MT32EMU = 0
+else ifneq (,$(findstring armv,$(platform)))
+   TARGET := $(TARGET_NAME)_libretro.so
+   DEFINES += -fPIC -Wno-multichar -D_ARM_ASSEM_
+   LDFLAGS += -shared -Wl,--version-script=../link.T -fPIC
+   USE_VORBIS = 0
+   USE_THEORADEC = 0
+   USE_TREMOR = 0
+   HAVE_MT32EMU = 0
 
 # Classic Platforms ####################
 # Platform affix = classic_<ISA>_<µARCH>

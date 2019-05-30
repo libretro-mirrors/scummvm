@@ -34,6 +34,10 @@ else ifneq ($(findstring Darwin,$(shell uname -a)),)
 ifeq ($(shell uname -p),powerpc)
 	arch = ppc
 endif
+else ifneq (,$(findstring armv,$(platform)))
+   ifeq (,$(findstring classic_,$(platform)))
+      override platform += unix
+   endif
 else ifneq ($(findstring win,$(shell uname -a)),)
    platform = win
 endif
@@ -180,6 +184,36 @@ else ifneq (,$(findstring armv,$(platform)))
    USE_THEORADEC = 0
    USE_TREMOR = 1
    HAVE_MT32EMU = 0
+
+# Classic Platforms ####################
+# Platform affix = classic_<ISA>_<µARCH>
+# Help at https://modmyclassic.com/comp
+# (armv7 a7, hard point, neon based) ### 
+# NESC, SNESC, C64 mini 
+else ifeq ($(platform), classic_armv7_a7)
+	TARGET := $(TARGET_NAME)_libretro.so
+	DEFINES := -fPIC -marm -mcpu=cortex-a7 -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard 
+  LDFLAGS += -shared -Wl,--version-script=../link.T -fPIC -Wl,--no-undefined -mcpu=cortex-a7 -mtune=cortex-a7 -static-libgcc -static-libstdc++
+	USE_VORBIS = 0
+	USE_THEORADEC = 0
+	USE_TREMOR = 1
+	HAVE_MT32EMU = 0
+	HAVE_NEON = 1
+
+# (armv8 a35, hard point, neon based) ###
+# Playstation Classic
+else ifeq ($(platform), classic_armv8_a35)
+	TARGET := $(TARGET_NAME)_libretro.so
+	DEFINES := -fPIC -marm -mcpu=cortex-a35 -mtune=cortex-a35 -mfpu=neon-fp-armv8 -mfloat-abi=hard 
+  LDFLAGS += -shared -Wl,--version-script=../link.T -fPIC -Wl,--no-undefined -mcpu=cortex-a35 -mtune=cortex-a35 -static-libgcc -static-libstdc++
+	USE_VORBIS = 0
+	USE_THEORADEC = 0
+	USE_TREMOR = 1
+	HAVE_MT32EMU = 0
+	HAVE_NEON = 1
+
+#######################################
+
 ifneq (,$(findstring cortexa8,$(platform)))
    DEFINES += -marm -mcpu=cortex-a8
 else ifneq (,$(findstring cortexa9,$(platform)))
@@ -419,11 +453,19 @@ $(TARGET): $(OBJS) libdeps.a
 	$(AR) $@ $(wildcard *.o) $(wildcard */*.o) $(wildcard */*/*.o) $(wildcard */*/*/*.o) $(wildcard */*/*/*/*.o)  $(wildcard */*/*/*/*/*.o)
 else
 $(TARGET): $(OBJS) libdeps.a 
+
+	@echo "** BUILDING $(TARGET) FOR PLATFORM $(platform) **"
+	$(CXX) $(LDFLAGS) $+ $(LIBS) -o $@
+	@echo "** BUILD SUCCESSFUL! GG NO RE **"
+
 	$(LD) $(LDFLAGS) $+ $(LIBS) $(LINKOUT)$@
+
 endif
 
 libdeps.a: $(OBJS_DEPS)
 ifeq ($(platform), libnx)
+		$(AR) -rc $@ $^
+else ifeq ($(platform), classic_armv8_a35)
 		$(AR) -rc $@ $^
 else
 		$(AR) $@ $^

@@ -76,6 +76,8 @@ $(MODULE_LIB-$(MODULE)): $(MODULE_OBJS-$(MODULE))
 	$(QUIET)-$(RM) $@
 ifeq ($(platform), libnx)
 	$(QUIET_AR)$(AR) -rc $@ $+
+else ifeq ($(platform), classic_armv8_a35)
+	$(QUIET_AR)$(AR) -rc $@ $+
 else
 	$(QUIET_AR)$(AR) $@ $+
 endif

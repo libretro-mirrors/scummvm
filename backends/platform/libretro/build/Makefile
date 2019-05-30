@@ -2,7 +2,7 @@
 DEBUG=0
 USE_ZLIB   = 1
 USE_TREMOR = 0
-USE_VORBIS = 0
+USE_VORBIS = 1
 USE_FLAC   = 1
 USE_MAD    = 1
 USE_FAAD   = 1
@@ -182,7 +182,7 @@ else ifneq (,$(findstring armv,$(platform)))
    LDFLAGS += -shared -Wl,--version-script=../link.T -fPIC
    USE_VORBIS = 0
    USE_THEORADEC = 0
-   USE_TREMOR = 0
+   USE_TREMOR = 1
    HAVE_MT32EMU = 0
 
 # Classic Platforms ####################

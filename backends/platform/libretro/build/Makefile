@@ -2,7 +2,7 @@
 DEBUG=0
 USE_ZLIB   = 1
 USE_TREMOR = 0
-USE_VORBIS = 1
+USE_VORBIS = 0
 USE_FLAC   = 1
 USE_MAD    = 1
 USE_FAAD   = 1
@@ -34,6 +34,10 @@ else ifneq ($(findstring Darwin,$(shell uname -a)),)
 ifeq ($(shell uname -p),powerpc)
 	arch = ppc
 endif
+else ifneq (,$(findstring armv,$(platform)))
+   ifeq (,$(findstring classic_,$(platform)))
+      override platform += unix
+   endif
 else ifneq ($(findstring win,$(shell uname -a)),)
    platform = win
 endif
@@ -172,74 +176,42 @@ else ifeq ($(platform), android-armv7)
    USE_THEORADEC = 0
    USE_TREMOR = 1
    HAVE_MT32EMU = 0
-else ifneq (,$(findstring armv,$(platform)))
-   TARGET := $(TARGET_NAME)_libretro.so
-   DEFINES += -fPIC -Wno-multichar -D_ARM_ASSEM_
-   LDFLAGS += -shared -Wl,--version-script=../link.T -fPIC
-   USE_VORBIS = 0
-   USE_THEORADEC = 0
-   USE_TREMOR = 1
-   HAVE_MT32EMU = 0
+#else ifeq (,$(findstring armv,$(platform)))
+#   TARGET := $(TARGET_NAME)_libretro.so
+#   DEFINES += -fPIC -Wno-multichar -D_ARM_ASSEM_
+#   LDFLAGS += -shared -Wl,--version-script=../link.T -fPIC
+#   USE_VORBIS = 0
+#   USE_THEORADEC = 0
+#   USE_TREMOR = 0
+#   HAVE_MT32EMU = 0
 
 # Classic Platforms ####################
 # Platform affix = classic_<ISA>_<µARCH>
 # Help at https://modmyclassic.com/comp
-
 # (armv7 a7, hard point, neon based) ### 
 # NESC, SNESC, C64 mini 
 else ifeq ($(platform), classic_armv7_a7)
 	TARGET := $(TARGET_NAME)_libretro.so
-	fpic := -fPIC
-	SHARED := -shared -Wl,--version-script=../link.T  -Wl,--no-undefined -fPIC
-	CFLAGS += -Ofast \
-	-flto=4 -fwhole-program -fuse-linker-plugin \
-	-fdata-sections -ffunction-sections -Wl,--gc-sections \
-	-fno-stack-protector -fno-ident -fomit-frame-pointer \
-	-falign-functions=1 -falign-jumps=1 -falign-loops=1 \
-	-fno-unwind-tables -fno-asynchronous-unwind-tables -fno-unroll-loops \
-	-fmerge-all-constants -fno-math-errno \
-	-marm -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
-	CXXFLAGS += $(CFLAGS)
-	CPPFLAGS += $(CFLAGS)
-	ASFLAGS += $(CFLAGS)
-    USE_VORBIS = 0
-    USE_THEORADEC = 0
-    USE_TREMOR = 1
-    HAVE_MT32EMU = 0
-	ifeq ($(shell echo `$(CC) -dumpversion` "< 4.9" | bc -l), 1)
-	  CFLAGS += -march=armv7-a
-	else
-	  CFLAGS += -march=armv7ve
-	  # If gcc is 5.0 or later
-	  ifeq ($(shell echo `$(CC) -dumpversion` ">= 5" | bc -l), 1)
-	    LDFLAGS += -static-libgcc -static-libstdc++
-	  endif
-	endif
-	
-# (armv8 a35, hard point, neon based) ### 
-# NESC, SNESC, C64 mini 
+	DEFINES := -fPIC -marm -mcpu=cortex-a7 -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard 
+  LDFLAGS += -shared -Wl,--version-script=../link.T -fPIC -Wl,--no-undefined -mcpu=cortex-a7 -mtune=cortex-a7 -static-libgcc -static-libstdc++
+	USE_VORBIS = 0
+	USE_THEORADEC = 0
+	USE_TREMOR = 1
+	HAVE_MT32EMU = 0
+	HAVE_NEON = 1
+
+# (armv8 a35, hard point, neon based) ###
+# Playstation Classic
 else ifeq ($(platform), classic_armv8_a35)
 	TARGET := $(TARGET_NAME)_libretro.so
-	fpic := -fPIC
-	SHARED := -shared -Wl,--version-script=../link.T  -Wl,--no-undefined -fPIC
-	CFLAGS += -Ofast \
-	-flto=4 -fwhole-program -fuse-linker-plugin \
-	-fdata-sections -ffunction-sections -Wl,--gc-sections \
-	-fno-stack-protector -fno-ident -fomit-frame-pointer \
-	-falign-functions=1 -falign-jumps=1 -falign-loops=1 \
-	-fno-unwind-tables -fno-asynchronous-unwind-tables -fno-unroll-loops \
-	-fmerge-all-constants -fno-math-errno \
-	-marm -mtune=cortex-a35 -mfpu=neon-fp-armv8 -mfloat-abi=hard
-	CXXFLAGS += $(CFLAGS)
-	CPPFLAGS += $(CFLAGS)
-	ASFLAGS += $(CFLAGS)
-    USE_VORBIS = 0
-    USE_THEORADEC = 0
-    USE_TREMOR = 1
-    HAVE_MT32EMU = 0
-    CFLAGS += -march=armv8-a
-    LDFLAGS += -static-libgcc -static-libstdc++
-    
+	DEFINES := -fPIC -marm -mcpu=cortex-a35 -mtune=cortex-a35 -mfpu=neon-fp-armv8 -mfloat-abi=hard 
+  LDFLAGS += -shared -Wl,--version-script=../link.T -fPIC -Wl,--no-undefined -mcpu=cortex-a35 -mtune=cortex-a35 -static-libgcc -static-libstdc++
+	USE_VORBIS = 0
+	USE_THEORADEC = 0
+	USE_TREMOR = 1
+	HAVE_MT32EMU = 0
+	HAVE_NEON = 1
+
 #######################################
 
 ifneq (,$(findstring cortexa8,$(platform)))
@@ -492,6 +464,8 @@ endif
 
 libdeps.a: $(OBJS_DEPS)
 ifeq ($(platform), libnx)
+		$(AR) -rc $@ $^
+else ifeq ($(platform), classic_armv8_a35)
 		$(AR) -rc $@ $^
 else
 		$(AR) $@ $^

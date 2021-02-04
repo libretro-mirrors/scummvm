@@ -39,6 +39,10 @@ endif
 ifeq ($(shell uname -p),powerpc)
 	arch = ppc
 endif
+else ifneq (,$(findstring armv,$(platform)))
+   ifeq (,$(findstring classic_,$(platform)))
+      override platform += unix
+   endif
 else ifneq ($(findstring win,$(shell uname -a)),)
    platform = win
 endif
@@ -203,6 +207,34 @@ else ifeq ($(platform), vita)
 	DEFINES += -DVITA
 	STATIC_LINKING = 1
 
+# Classic Platforms ####################
+# Platform affix = classic_<ISA>_<µARCH>
+# Help at https://modmyclassic.com/comp
+# (armv7 a7, hard point, neon based) ### 
+# NESC, SNESC, C64 mini 
+else ifeq ($(platform), classic_armv7_a7)
+	TARGET := $(TARGET_NAME)_libretro.so
+	DEFINES := -fPIC -marm -mcpu=cortex-a7 -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard 
+  LDFLAGS += -shared -Wl,--version-script=../link.T -fPIC -Wl,--no-undefined -mcpu=cortex-a7 -mtune=cortex-a7 -static-libgcc -static-libstdc++
+	USE_VORBIS = 0
+	USE_THEORADEC = 0
+	USE_TREMOR = 1
+	HAVE_MT32EMU = 0
+	HAVE_NEON = 1
+
+# (armv8 a35, hard point, neon based) ###
+# Playstation Classic
+else ifeq ($(platform), classic_armv8_a35)
+	TARGET := $(TARGET_NAME)_libretro.so
+	DEFINES := -fPIC -marm -mcpu=cortex-a35 -mtune=cortex-a35 -mfpu=neon-fp-armv8 -mfloat-abi=hard 
+  LDFLAGS += -shared -Wl,--version-script=../link.T -fPIC -Wl,--no-undefined -mcpu=cortex-a35 -mtune=cortex-a35 -static-libgcc -static-libstdc++
+	USE_VORBIS = 0
+	USE_THEORADEC = 0
+	USE_TREMOR = 1
+	HAVE_MT32EMU = 0
+	HAVE_NEON = 1
+
+#######################################
 else ifeq ($(platform), android-armv7)
    TARGET  := $(TARGET_NAME)_libretro_android.so
    DEFINES += -fPIC -Wno-multichar -D_ARM_ASSEM_
@@ -473,6 +505,8 @@ endif
 libdeps.a: $(OBJS_DEPS)
 ifeq ($(platform), libnx)
 		@echo Linking $@...
+		$(HIDE)$(AR) -rc $@ $^
+else ifeq ($(platform), classic_armv8_a35)
 		$(HIDE)$(AR) -rc $@ $^
 else
 		@echo Linking $@...

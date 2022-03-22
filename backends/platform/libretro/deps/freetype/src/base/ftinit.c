@@ -44,6 +44,9 @@
 #include FT_MODULE_H
 #include "basepic.h"
 
+#ifdef __PS3__
+#define getenv(x) NULL
+#endif
 
   /*************************************************************************/
   /*                                                                       */

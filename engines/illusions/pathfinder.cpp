@@ -106,7 +106,11 @@ int PathFinder::calcLineDistance(PathLine &line) {
 	int16 deltaX = line.p0.x - line.p1.x;
 	int16 deltaY = line.p0.y - line.p1.y;
 	if (deltaX != 0 || deltaY != 0)
+#ifndef __PS3__
 		return sqrt(deltaX * deltaX + deltaY * deltaY);
+#else
+		return sqrt((double)deltaX * deltaX + deltaY * deltaY);
+#endif
 	return 0;
 }
 

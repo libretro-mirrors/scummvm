@@ -277,7 +277,7 @@
 		  defined(__SYMBIAN32__) || \
 		  defined(__LIBRETRO__)
 
-#if defined(WIIU) || defined(__CELLOS_LV2__) || defined(GEKKO)
+#if defined(WIIU) || defined(__PS3__) || defined(GEKKO)
 		#undef  SCUMM_LITTLE_ENDIAN
 		#define SCUMM_BIG_ENDIAN
 		#define SCUMM_NEED_ALIGNMENT

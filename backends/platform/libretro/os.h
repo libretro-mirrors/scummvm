@@ -45,7 +45,7 @@
 extern char cmd_params[20][200];
 extern char cmd_params_num;
 
-#if (defined(GEKKO) && !defined(WIIU)) || defined(__CELLOS_LV2__)
+#if (defined(GEKKO) && !defined(WIIU)) || (defined(__PS3__) && !defined(__PSL1GHT__))
 extern int access(const char *path, int amode);
 #endif
 

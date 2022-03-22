@@ -131,7 +131,11 @@ static uint findBestColor(byte *palette, uint32 rgb) {
 		int g = *(palette + 3 * i + 1) - GREEN(rgb);
 		int b = *(palette + 3 * i + 2) - BLUE(rgb);
 
+#ifndef __PS3__
 		double dist = sqrt((((512 + rmean) * r * r) >> 8) + 4 * g * g + (((767 - rmean) * b * b) >> 8));
+#else
+		double dist = sqrt((double)(((512 + rmean) * r * r) >> 8) + 4 * g * g + (((767 - rmean) * b * b) >> 8));
+#endif
 		if (min > dist) {
 			bestColor = i;
 			min = dist;

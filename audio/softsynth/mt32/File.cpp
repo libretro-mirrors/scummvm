@@ -22,6 +22,10 @@
 #include "File.h"
 #include "sha1/sha1.h"
 
+#ifdef __PS3__
+using namespace std;
+#endif
+
 namespace MT32Emu {
 
 AbstractFile::AbstractFile() : sha1DigestCalculated(false) {

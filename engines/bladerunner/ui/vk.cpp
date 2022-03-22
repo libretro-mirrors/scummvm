@@ -751,7 +751,11 @@ void VK::drawNeedle(Graphics::Surface &surface) {
 	}
 
 	int needleOffset = abs(38 - _needleValue);
+#ifndef __PS3__
 	int y = 345 - sqrt(72 * 72 - needleOffset * needleOffset);
+#else
+	int y = 345 - sqrt((double)72 * 72 - needleOffset * needleOffset);
+#endif
 
 	float colorIntensity = MIN(78.0f, _needleValue + 39.0f) / 78.0f;
 
@@ -935,7 +939,11 @@ void VK::animateAdjustment(int target) {
 void VK::setAdjustment(int x) {
 	_adjustment = CLIP(x - 4, 154, 246);
 	int offset = abs(199 - _adjustment);
+#ifndef __PS3__
 	int y = sqrt(88 * 88 - offset * offset);
+#else
+	int y = sqrt((double)88 * 88 - offset * offset);
+#endif
 	_buttons->setImageLeft(1, _adjustment);
 	_buttons->setImageTop(1, 345 - y);
 }

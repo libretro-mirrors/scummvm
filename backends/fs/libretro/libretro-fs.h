@@ -30,7 +30,9 @@
 #endif
 #include <unistd.h>
 
-#ifdef PLAYSTATION3
+#if defined(__PS3__) && !defined(__PSL1GHT__)
+#include <cell/cell_fs.h>
+#include <sys/stat.h>
 #define FORBIDDEN_SYMBOL_ALLOW_ALL
 #define	F_OK		0	/* test for existence of file */
 #define	W_OK		0x02	/* test for write permission */
@@ -88,7 +90,15 @@ public:
 	 */
 	LibRetroFilesystemNode(const Common::String &path);
 
+#if defined(__PS3__) && !defined(__PSL1GHT__)
+	virtual bool exists() const {
+		CellFsStat entry;
+		cellFsStat(_path.c_str(), &entry);
+		return access(_path.c_str(), F_OK) == 0 || (entry.st_mode & S_IFDIR) != 0;
+	}
+#else
 	virtual bool exists() const { return access(_path.c_str(), F_OK) == 0; }
+#endif
 	virtual Common::String getDisplayName() const { return _displayName; }
 	virtual Common::String getName() const { return _displayName; }
 	virtual Common::String getPath() const { return _path; }

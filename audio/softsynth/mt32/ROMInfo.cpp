@@ -21,6 +21,10 @@
 
 #include "ROMInfo.h"
 
+#ifdef __PS3__
+using namespace std;
+#endif
+
 namespace MT32Emu {
 
 static const ROMInfo *getKnownROMInfoFromList(Bit32u index) {

@@ -26,6 +26,10 @@
 #include "Types.h"
 #include "Enumerations.h"
 
+#ifdef __PS3__
+using namespace std;
+#endif
+
 namespace MT32Emu {
 
 class Analog;

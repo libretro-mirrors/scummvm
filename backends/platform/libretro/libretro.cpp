@@ -12,7 +12,7 @@
 #else
 #include <unistd.h>
 #endif
-#ifndef _MSC_VER
+#if !defined(_MSC_VER) && !defined(__PS3__)
 /**
  * Include libgen.h for basename() and dirname().
  * @see http://linux.die.net/man/3/basename
@@ -20,6 +20,23 @@
 #include <libgen.h>
 #endif
 #include <string.h>
+
+#ifdef __PS3__
+char *dirname (char *path)
+{
+	if (path == NULL) return "/";
+    char loc[512];
+    strcpy(loc, path);
+    int l = strlen(loc);
+    loc[l - 1] = 0;
+    if (strrchr(loc, '/') == NULL) return "/";
+    int slash = strrchr(loc, '/') - loc;
+    if (slash == 0) return "/";
+    char* temp = (char*)malloc(slash);
+    memcpy(temp, loc, slash);
+    return temp;
+}
+#endif
 
 /**
  * Include base/internal_version.h to allow access to SCUMMVM_VERSION.
@@ -531,7 +548,7 @@ void retro_cheat_set(unsigned unused, bool unused1, const char* unused2) { }
 
 unsigned retro_get_region (void) { return RETRO_REGION_NTSC; }
 
-#if (defined(GEKKO) && !defined(WIIU)) || defined(__CELLOS_LV2__)
+#if (defined(GEKKO) && !defined(WIIU)) || (defined(__PS3__) && !defined(__PSL1GHT__))
 int access(const char *path, int amode)
 {
    FILE *f;

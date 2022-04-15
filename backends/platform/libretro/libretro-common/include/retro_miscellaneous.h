@@ -26,8 +26,10 @@
 #include <stdint.h>
 #include <math.h>
 
-#if defined(__CELLOS_LV2__) && !defined(__PSL1GHT__)
+#if defined(__PS3__) && !defined(__PSL1GHT__)
 #include <sys/timer.h>
+#define fseeko fseek
+#define ftello ftell
 #elif defined(XENON)
 #include <time/time.h>
 #elif(defined(GEKKO) && !defined(WIIU)) || defined(__PSL1GHT__) || defined(__QNX__)
@@ -92,7 +94,7 @@
  **/
 static INLINE void retro_sleep(unsigned msec)
 {
-#if defined(__CELLOS_LV2__) && !defined(__PSL1GHT__)
+#if defined(__PS3__) && !defined(__PSL1GHT__)
    sys_timer_usleep(1000 * msec);
 #elif defined(PSP) || defined(VITA)
    sceKernelDelayThread(1000 * msec);

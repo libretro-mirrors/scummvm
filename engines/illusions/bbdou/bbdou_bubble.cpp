@@ -229,7 +229,11 @@ void BbdouBubble::calcBubbleTrail(Common::Point &sourcePt, Common::Point &destPt
 		radius = ABS(destPt.y - centerY);
 	}
 
+#ifndef __PS3__
 	const float fullDistance = sqrt((destPt.y - sourcePt.y) * (destPt.y - sourcePt.y) + (destPt.x - sourcePt.x) * (destPt.x - sourcePt.x));
+#else
+	const float fullDistance = sqrt((double)(destPt.y - sourcePt.y) * (destPt.y - sourcePt.y) + (destPt.x - sourcePt.x) * (destPt.x - sourcePt.x));
+#endif
 	const float arcAngle = 2 * asin(CLIP(0.5 * fullDistance / radius, -1.0, 1.0));
 	const float arcLength = arcAngle * radius;
 	int pointsCount = (int)(arcLength / kDistanceBetweenPoints);

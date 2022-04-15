@@ -28,6 +28,10 @@
 #include "common/serializer.h"
 #include "common/scummsys.h"
 
+#ifdef __PS3__
+#undef _SP
+#endif
+
 namespace Common {
 class ReadStream;
 }

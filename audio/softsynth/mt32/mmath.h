@@ -20,6 +20,10 @@
 
 #include <cmath>
 
+#ifdef __PS3__
+using namespace std;
+#endif
+
 namespace MT32Emu {
 
 // Mathematical constants

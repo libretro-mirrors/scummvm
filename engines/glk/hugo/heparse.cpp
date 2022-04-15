@@ -22,6 +22,10 @@
 
 #include "glk/hugo/hugo.h"
 
+#ifdef __PS3__
+#define isascii(a) (((a >= 0) && (a <= 127))?1:0)
+#endif
+
 namespace Glk {
 namespace Hugo {
 

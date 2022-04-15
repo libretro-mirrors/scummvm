@@ -110,7 +110,11 @@ WalkAction *WalkMgr::getWalkAction() {
 double WalkMgr::getLengthBetweenLocations(WalkLocation *first, WalkLocation *second) {
 	Coordinates firstCoord = getLocationCoordinates(first->getName());
 	Coordinates secondCoord = getLocationCoordinates(second->getName());
+#ifndef __PS3__
 	return hypot(secondCoord.point.x - firstCoord.point.x, secondCoord.point.y - firstCoord.point.y);
+#else
+	return hypot((double)secondCoord.point.x - firstCoord.point.x, (double)secondCoord.point.y - firstCoord.point.y);
+#endif
 }
 
 Coordinates WalkMgr::getLocationCoordinates(const Common::String &locationName) {

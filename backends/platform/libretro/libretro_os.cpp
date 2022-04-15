@@ -53,8 +53,9 @@
 #else
 #include <windows.h>
 #endif
-#elif defined(__CELLOS_LV2__)
+#elif defined(__PS3__) && !defined(__PSL1GHT__)
 #include <sys/sys_time.h>
+#define usleep sys_timer_usleep
 #elif (defined(GEKKO) && !defined(WIIU))
 #include <ogc/lwp_watchdog.h>
 #else
@@ -642,7 +643,7 @@ class OSystem_RETRO : public EventsBaseBackend, public PaletteManager {
          return (ticks_to_microsecs(gettime()) / 1000.0) - _startTime;
 #elif defined(WIIU)
          return ((cpu_features_get_time_usec())/1000) - _startTime;
-#elif defined(__CELLOS_LV2__)
+#elif defined(__PS3__) && !defined(__PSL1GHT__)
          return (sys_time_get_system_time() / 1000.0) - _startTime;
 #else
          struct timeval t;
